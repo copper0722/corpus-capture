@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/copper0722/corpus-capture/blob/main/profiles/schema.json",
+  "title": "capture-profiles-v1",
+  "description": "The publisher capture registry. Pure data: one set of selectors read by the browser extension, by an acquisition script and by a receiver's mapping, so a selector never has to be fixed in three places. `status` is a measurement, not a plan.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generic",
+    "profiles"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "capture-profiles-v1"
+    },
+    "description": {
+      "type": "string"
+    },
+    "status_meanings": {
+      "description": "What each status claims, written down so the registry explains its own vocabulary.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "generic": {
+      "$ref": "#/$defs/genericProfile"
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/publisherProfile"
+      }
+    }
+  },
+  "$defs": {
+    "selectorList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "genericProfile": {
+      "description": "The fallback. It claims no hosts and has no status: it is what runs when nothing matched, and a publisher profile inherits from it whatever it does not override.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "article_container_selectors",
+        "figure_selectors"
+      ],
+      "properties": {
+        "id": {
+          "const": "generic"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_patterns": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Hosts this profile claims. A leading `*.` matches the bare domain and any subdomain."
+        },
+        "article_container_selectors": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Where the article body is. Serializing the whole document is what carries the adverts, the modals and the marketing rails into the artifact."
+        },
+        "figure_selectors": {
+          "$ref": "#/$defs/selectorList",
+          "description": "The publisher's own figure elements. Rung 1 of structural figure selection."
+        },
+        "caption_selectors": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "meta_sources": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "doi_source": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "series_source": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "access_markers": {
+          "$ref": "#/$defs/selectorList",
+          "description": "What the page shows a reader without entitlement. An observation, never a licence."
+        },
+        "drop_selectors": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "drop_asset_hosts": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "drop_asset_patterns": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "decorative_asset_patterns": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "status": {
+          "description": "supported = a committed fixture exists and a test asserts container, identity and the figure manifest against it. generic = only the fallback selectors are proven. unsupported = something was measured and it did not work.",
+          "enum": [
+            "supported",
+            "generic",
+            "unsupported"
+          ]
+        },
+        "fixture": {
+          "description": "Repository path to the skeleton fixture that proves `supported`. Dropped from the projection served to the extension, which must carry no repository paths.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Required when status is unsupported: what was OBSERVED, not what is assumed.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "publisherProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "host_patterns",
+        "article_container_selectors",
+        "figure_selectors",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(?!generic$)[a-z0-9][a-z0-9_-]*$"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_patterns": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Hosts this profile claims. A leading `*.` matches the bare domain and any subdomain."
+        },
+        "article_container_selectors": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Where the article body is. Serializing the whole document is what carries the adverts, the modals and the marketing rails into the artifact."
+        },
+        "figure_selectors": {
+          "$ref": "#/$defs/selectorList",
+          "description": "The publisher's own figure elements. Rung 1 of structural figure selection."
+        },
+        "caption_selectors": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "meta_sources": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "doi_source": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "series_source": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "access_markers": {
+          "$ref": "#/$defs/selectorList",
+          "description": "What the page shows a reader without entitlement. An observation, never a licence."
+        },
+        "drop_selectors": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "drop_asset_hosts": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "drop_asset_patterns": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "decorative_asset_patterns": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "status": {
+          "description": "supported = a committed fixture exists and a test asserts container, identity and the figure manifest against it. generic = only the fallback selectors are proven. unsupported = something was measured and it did not work.",
+          "enum": [
+            "supported",
+            "generic",
+            "unsupported"
+          ]
+        },
+        "fixture": {
+          "description": "Repository path to the skeleton fixture that proves `supported`. Dropped from the projection served to the extension, which must carry no repository paths.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Required when status is unsupported: what was OBSERVED, not what is assumed.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "supported"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "fixture"
+            ],
+            "properties": {
+              "fixture": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unsupported"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Corpus Capture",
+  "version": "1.0.0",
+  "description": "把目前這篇文章頁（含圖片）打包成自含 HTML，一鍵存入 corpus。",
+  "permissions": ["activeTab", "scripting", "storage", "downloads", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "存入 corpus",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"
+  }
+}

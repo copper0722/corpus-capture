@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "corpus-capture"
+version = "0.1.0"
+description = "Publisher capture profiles, structural figure selection, and the intake contract for the corpus-capture browser extension"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+keywords = ["archiving", "browser-extension", "html", "literature", "scholarly"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Text Processing :: Markup :: HTML",
+]
+dependencies = [
+  "beautifulsoup4>=4.12,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+  "jsonschema>=4.20",
+  "pytest>=8.3",
+  "ruff>=0.9",
+]
+# The reference receiver in docs/receiver-reference.md. Not needed to use the
+# library, only to run the example.
+receiver = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+]
+
+[project.urls]
+Homepage = "https://github.com/copper0722/corpus-capture"
+Protocol = "https://github.com/copper0722/corpus-capture/blob/main/docs/protocol.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/corpus_capture"]
+
+# The registry lives at profiles/capture_profiles.json -- one file, versioned
+# beside the extension that fetches it. An installed wheel cannot see the
+# checkout, so the same bytes are mapped next to the module. One source, two
+# locations; `corpus_capture.profiles` looks in both.
+[tool.hatch.build.targets.wheel.force-include]
+"profiles/capture_profiles.json" = "corpus_capture/capture_profiles.json"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "python/", "profiles/", "extension/", "docs/", "fixtures/", "tests/",
+  "tools/", "README.md", "README.zh-TW.md", "LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["python"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
