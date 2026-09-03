@@ -1,5 +1,6 @@
 "use strict";
 
+import { safeReaderUrl } from "./net-policy.js";
 import {
   capturePage,
   profileForUrl,
@@ -8,6 +9,7 @@ import {
   listReceipts,
   readReceipt,
   rememberReceipt,
+  settings,
   submitCapture,
 } from "./capture.js";
 
@@ -32,6 +34,12 @@ const STATUS_BADGE = {
   unsupported: "未支援",
 };
 
+// The origin the receiver was configured with. A receipt's `reader_url` is a
+// string the receiver chose, and this is what it has to match before the popup
+// will offer it as a link: an extension surface the reader trusts must not be a
+// launchpad to wherever a compromised or merely misconfigured receiver points.
+let apiOrigin = "";
+
 const statusNode = document.querySelector("#status");
 const badgeNode = document.querySelector("#profile");
 const button = document.querySelector("#capture");
@@ -53,13 +61,21 @@ function render(rows) {
     state.className = "state";
     state.textContent = STATE_LABEL[row.state] || row.state;
     item.append(title, state);
-    if (row.reader_url) {
+    const reader = safeReaderUrl(row.reader_url, apiOrigin);
+    if (reader) {
       const link = document.createElement("a");
-      link.href = row.reader_url;
+      link.href = reader;
       link.target = "_blank";
-      link.rel = "noreferrer";
+      link.rel = "noreferrer noopener";
       link.textContent = "在 Reader 開啟";
       item.append(link);
+    } else if (row.reader_url) {
+      // Say so rather than dropping it silently: a receipt whose reader link was
+      // refused is a receiver problem the operator needs to see.
+      const note = document.createElement("div");
+      note.className = "state";
+      note.textContent = "收據附的 Reader 連結不在設定的接收端網域，未顯示";
+      item.append(note);
     }
     return item;
   }));
@@ -72,6 +88,7 @@ const SETTLED = new Set([
 ]);
 
 async function refresh() {
+  try { apiOrigin = (await settings()).apiBase; } catch (_) { apiOrigin = ""; }
   const rows = await listReceipts();
   render(rows);
   const pending = rows.filter((row) => row.receipt_id && !SETTLED.has(row.state));
@@ -103,7 +120,9 @@ async function run() {
     say(
       `已打包 ${(capture.html.length / 1024 / 1024).toFixed(1)} MB`
       + `，文章圖表 ${(capture.figures || []).length}${figureNames ? `（${figureNames}）` : ""}`
-      + `，其餘 ${(capture.decorative || []).length} 張標為裝飾，送出中…`
+      + `，其餘 ${(capture.decorative || []).length} 張標為裝飾`
+      + `${capture.images.refused ? `，拒抓 ${capture.images.refused} 個外部資源` : ""}`
+      + "，送出中…"
     );
     try {
       const receipt = await submitCapture(capture, capturedAt);

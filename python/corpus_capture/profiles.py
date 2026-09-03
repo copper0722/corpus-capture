@@ -83,7 +83,7 @@ PROFILE_KEYS = {
     "figure_selectors", "caption_selectors", "meta_sources", "doi_source",
     "series_source", "access_markers", "status", "fixture", "notes", "reason",
     "drop_selectors", "drop_asset_hosts", "drop_asset_patterns",
-    "decorative_asset_patterns",
+    "decorative_asset_patterns", "asset_origins",
 }
 REQUIRED_KEYS = {
     "id", "display_name", "host_patterns", "article_container_selectors",
@@ -94,7 +94,7 @@ REQUIRED_KEYS = {
 INHERITED_KEYS = (
     "article_container_selectors", "figure_selectors", "caption_selectors",
     "meta_sources", "doi_source", "series_source", "access_markers",
-    "drop_selectors", "decorative_asset_patterns",
+    "drop_selectors", "decorative_asset_patterns", "asset_origins",
 )
 
 
@@ -145,7 +145,7 @@ def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
             "host_patterns", "article_container_selectors", "figure_selectors",
             "caption_selectors", "meta_sources", "doi_source", "series_source",
             "access_markers", "drop_selectors", "drop_asset_hosts",
-            "drop_asset_patterns", "decorative_asset_patterns",
+            "drop_asset_patterns", "decorative_asset_patterns", "asset_origins",
         ):
             _require_str_list(profile, key, where=where)
         # The rule that keeps `status` honest. A claim of support with no fixture

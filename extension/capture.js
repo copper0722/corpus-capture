@@ -1,5 +1,6 @@
 "use strict";
 
+import { assetDecision, hostMatches, sameOrigin } from "./net-policy.js";
 import { serializePage } from "./serialize.js";
 
 // No default endpoint ships with the extension. The receiver is a corpus you
@@ -16,6 +17,31 @@ export const MAX_RECEIPTS = 20;
 // with a hundred figures produces a large capture instead of a rejected one.
 const MAX_INLINE_BYTES = 24 * 1024 * 1024;
 const ASSET_TIMEOUT_MS = 20000;
+
+// Every request that carries the service token goes through this. `redirect:
+// "error"` is the point: a receiver that answers 30x -- because it was
+// misconfigured, because something in front of it was, or because it was taken
+// over -- must not have the browser replay the token at whatever it named.
+// Cookies are omitted for the same reason: the token IS the credential here,
+// and a second one only widens what a wrong destination receives.
+async function apiFetch(path, { apiBase, serviceToken, ...init } = {}) {
+  const headers = { ...(init.headers || {}) };
+  if (serviceToken) headers["x-corpus-service-token"] = serviceToken;
+  const response = await fetch(`${apiBase}${path}`, {
+    ...init,
+    headers,
+    credentials: "omit",
+    redirect: "error",
+    cache: "no-store",
+  });
+  // Belt and braces: `redirect: "error"` already rejects a redirected response,
+  // but a response that claims a different origin is not the receiver's answer
+  // whatever produced it.
+  if (response.redirected || !sameOrigin(response.url || apiBase, apiBase)) {
+    throw new Error("receiver_origin_changed");
+  }
+  return response;
+}
 
 export async function settings() {
   const stored = await chrome.storage.local.get(["apiBase", "serviceToken"]);
@@ -38,10 +64,7 @@ export async function profileRegistry({ refresh = false } = {}) {
   if (cached && !refresh && age < 6 * 60 * 60 * 1000) return cached;
   try {
     const { apiBase, serviceToken } = await settings();
-    const headers = serviceToken ? { "x-corpus-service-token": serviceToken } : {};
-    const response = await fetch(`${apiBase}/api/v1/capture/profiles`, {
-      headers, credentials: "include", cache: "no-store",
-    });
+    const response = await apiFetch("/api/v1/capture/profiles", { apiBase, serviceToken });
     if (!response.ok) throw new Error(`http_${response.status}`);
     const registry = await response.json();
     await chrome.storage.local.set({
@@ -53,16 +76,6 @@ export async function profileRegistry({ refresh = false } = {}) {
   }
 }
 
-function hostMatches(host, pattern) {
-  const h = String(host || "").toLowerCase().replace(/^\./, "");
-  const p = String(pattern || "").toLowerCase().replace(/^\./, "");
-  if (p.startsWith("*.")) {
-    const suffix = p.slice(2);
-    return h === suffix || h.endsWith(`.${suffix}`);
-  }
-  return h === p || h.endsWith(`.${p}`);
-}
-
 export function profileForUrl(registry, url) {
   const generic = (registry && registry.generic) || { id: "generic" };
   let host = "";
@@ -72,7 +85,7 @@ export function profileForUrl(registry, url) {
       const merged = { ...generic, ...profile, matched: true };
       for (const key of ["article_container_selectors", "figure_selectors",
                          "caption_selectors", "access_markers", "drop_selectors",
-                         "decorative_asset_patterns"]) {
+                         "decorative_asset_patterns", "asset_origins"]) {
         if (!profile[key]) merged[key] = generic[key] || [];
       }
       return merged;
@@ -163,19 +176,26 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-async function fetchAsset(url) {
+async function fetchAsset(url, credentials) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ASSET_TIMEOUT_MS);
   try {
-    // `credentials: include` is the reason an entitled figure comes back at all:
-    // publishers gate display-resolution images on the same session cookie the
-    // reader is already using in this tab.
+    // `credentials: "include"` is the reason an entitled figure comes back at
+    // all: publishers gate display-resolution images on the same session cookie
+    // the reader is already using in this tab. It is passed in rather than
+    // hardcoded because `assetDecision` returns it only for the page's own
+    // origin -- see net-policy.js.
+    //
+    // `redirect: "error"` closes the hole the origin check would otherwise
+    // leave: an allowed URL that answers 302 could hand the request, cookies
+    // and all, to a host no policy ever looked at.
     const response = await fetch(url, {
-      credentials: "include",
+      credentials,
+      redirect: "error",
       cache: "force-cache",
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok || response.redirected) return null;
     const buffer = new Uint8Array(await response.arrayBuffer());
     if (!buffer.length) return null;
     const type = (response.headers.get("content-type") || "").split(";")[0].trim();
@@ -202,15 +222,22 @@ function absolutizeCss(css, base) {
   });
 }
 
-export async function inlineAssets(page, onProgress) {
+export async function inlineAssets(page, onProgress, profile) {
   let html = page.html;
   let budget = MAX_INLINE_BYTES;
   let inlined = 0;
   let dropped = 0;
+  const refused = [];
   for (const asset of page.assets) {
     if (onProgress) onProgress(asset.index + 1, page.assets.length);
     const token = `corpus-asset-${page.nonce}-${asset.index}-end`;
-    const fetched = budget > 0 ? await fetchAsset(asset.url) : null;
+    // Every URL here came out of page-controlled markup. What may be fetched,
+    // and with whose cookies, is decided before anything touches the network.
+    const decision = assetDecision(asset.url, { pageUrl: page.url, profile });
+    if (!decision.allowed) refused.push({ asset_url: asset.url, reason: decision.reason });
+    const fetched = decision.allowed && budget > 0
+      ? await fetchAsset(decision.url, decision.credentials)
+      : null;
     if (!fetched || fetched.bytes.length > budget) {
       dropped += 1;
       // Removing the token rather than leaving it keeps the artifact honest: a
@@ -232,7 +259,7 @@ export async function inlineAssets(page, onProgress) {
       html = html.split(token).join(`data:${type};base64,${bytesToBase64(fetched.bytes)}`);
     }
   }
-  return { html, inlined, dropped };
+  return { html, inlined, dropped, refused };
 }
 
 export async function capturePage(tabId, onProgress, profile) {
@@ -245,7 +272,7 @@ export async function capturePage(tabId, onProgress, profile) {
   const page = injected && injected.result;
   if (!page || !page.html) throw new Error("page_not_serializable");
   page.nonce = nonce;
-  const { html, inlined, dropped } = await inlineAssets(page, onProgress);
+  const { html, inlined, dropped, refused } = await inlineAssets(page, onProgress, profile);
   // The page's own declaration first; a URL is only ever a fallback, and it has
   // to be trimmed -- NEJM serves `/do/10.1056/NEJMdo008670/full/`, whose path
   // tail is not part of the DOI and turned one into `10.1056/NEJMdo008670/full/`.
@@ -269,19 +296,21 @@ export async function capturePage(tabId, onProgress, profile) {
     scoped_to_article: Boolean(page.scoped_to_article),
     figures: page.figures || [],
     decorative: page.decorative || [],
-    images: { inlined, dropped, total: page.assets.length },
+    images: { inlined, dropped, total: page.assets.length, refused: refused.length },
+    // Kept, because "the capture is missing a figure" and "the capture refused
+    // to fetch a figure from somewhere it should not have" are different facts
+    // and only one of them is a bug in the profile.
+    refused_assets: refused.slice(0, 100),
   };
 }
 
 export async function submitCapture(capture, capturedAt) {
   const { apiBase, serviceToken } = await settings();
-  const headers = { "Content-Type": "application/json" };
-  if (serviceToken) headers["x-corpus-service-token"] = serviceToken;
-  const response = await fetch(`${apiBase}/api/v1/intake/html`, {
+  const response = await apiFetch("/api/v1/intake/html", {
+    apiBase,
+    serviceToken,
     method: "POST",
-    headers,
-    credentials: "include",
-    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url: capture.url,
       html: capture.html,
@@ -313,12 +342,8 @@ export async function submitCapture(capture, capturedAt) {
 
 export async function readReceipt(receiptId) {
   const { apiBase, serviceToken } = await settings();
-  const headers = {};
-  if (serviceToken) headers["x-corpus-service-token"] = serviceToken;
-  const response = await fetch(`${apiBase}/api/v1/intake/${encodeURIComponent(receiptId)}`, {
-    headers,
-    credentials: "include",
-    cache: "no-store",
+  const response = await apiFetch(`/api/v1/intake/${encodeURIComponent(receiptId)}`, {
+    apiBase, serviceToken,
   });
   if (!response.ok) throw new Error(`http_${response.status}`);
   return response.json();

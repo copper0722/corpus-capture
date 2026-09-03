@@ -4,7 +4,8 @@
   "status_meanings": {
     "supported": "A skeleton fixture is committed and a test asserts container, identity and the figure manifest against it.",
     "generic": "No publisher-specific selectors proven. Capture still works through the fallback selectors and records profile=generic.",
-    "unsupported": "A measured blocker prevents capture. `reason` states what was observed."
+    "unsupported": "A measured blocker prevents capture. `reason` states what was observed.",
+    "asset_origins": "Hosts other than the page's own origin that this publisher serves figures and stylesheets from. Nothing outside the page origin and this list is fetched, and nothing outside the page origin is fetched with the reader's cookies."
   },
   "generic": {
     "id": "generic",
@@ -84,7 +85,8 @@
       "placeholder",
       "avatar",
       "/cover"
-    ]
+    ],
+    "asset_origins": []
   },
   "profiles": [
     {
@@ -138,7 +140,11 @@
       ],
       "status": "supported",
       "fixture": "fixtures/capture-profiles/nejm.html",
-      "notes": "Case Challenge pages publish no citation_* bibliography at all: og:* plus a proprietary pbContext string. Figure labels come from the figure id (t1/f1) and the img alt (Table1/Figure1), which carry no space before the number."
+      "notes": "Case Challenge pages publish no citation_* bibliography at all: og:* plus a proprietary pbContext string. Figure labels come from the figure id (t1/f1) and the img alt (Table1/Figure1), which carry no space before the number.",
+      "asset_origins": [
+        "*.nejm.org",
+        "csvc.nejm.org"
+      ]
     },
     {
       "id": "lww",
@@ -181,7 +187,13 @@
       ],
       "status": "supported",
       "fixture": "fixtures/capture-profiles/lww.html",
-      "notes": "og:site_name is the PLATFORM (Ovid), not the journal, and og:title is truncated with an ellipsis before the ' : <journal>' suffix. Neither may be taken as bibliography."
+      "notes": "og:site_name is the PLATFORM (Ovid), not the journal, and og:title is truncated with an ellipsis before the ' : <journal>' suffix. Neither may be taken as bibliography.",
+      "asset_origins": [
+        "links.lww.com",
+        "cdn-links.lww.com",
+        "images.journals.lww.com",
+        "*.ovid.com"
+      ]
     },
     {
       "id": "jama",
@@ -226,7 +238,11 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: captured 10.1001/jamasurg.2023.6699 through the clinical browser. Container `.article-full-text` resolved; the article itself carries no figure element, so no figure assertion was possible and the profile stays generic until an article with figures is captured."
+      "notes": "2026-09-03: captured 10.1001/jamasurg.2023.6699 through the clinical browser. Container `.article-full-text` resolved; the article itself carries no figure element, so no figure assertion was possible and the profile stays generic until an article with figures is captured.",
+      "asset_origins": [
+        "cdn.jamanetwork.com",
+        "*.jamanetwork.com"
+      ]
     },
     {
       "id": "lancet",
@@ -267,7 +283,11 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: the DOI used for the attempt did not resolve (doi.org returned 'DOI Not Found'), so nothing about the publisher's markup was measured."
+      "notes": "2026-09-03: the DOI used for the attempt did not resolve (doi.org returned 'DOI Not Found'), so nothing about the publisher's markup was measured.",
+      "asset_origins": [
+        "*.thelancet.com",
+        "els-jbs-prod-cdn.jbs.elsevierhealth.com"
+      ]
     },
     {
       "id": "bmj",
@@ -310,7 +330,11 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: captured 10.1136/pn-2023-003782. No article container selector matched and the page carried no figure element -- consistent with a landing page rather than entitled full text."
+      "notes": "2026-09-03: captured 10.1136/pn-2023-003782. No article container selector matched and the page carried no figure element -- consistent with a landing page rather than entitled full text.",
+      "asset_origins": [
+        "*.bmj.com",
+        "static-content.springer.com"
+      ]
     },
     {
       "id": "acp",
@@ -350,7 +374,10 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: captured 10.7326/p22-0023 (a Summary for Patients). Container `article` resolved; no figure element in the page."
+      "notes": "2026-09-03: captured 10.7326/p22-0023 (a Summary for Patients). Container `article` resolved; no figure element in the page.",
+      "asset_origins": [
+        "*.acpjournals.org"
+      ]
     },
     {
       "id": "nature",
@@ -394,7 +421,11 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: captured 10.1038/s41581-025-00939-0 (a Publisher Correction). Container `article` resolved; a correction has no figures."
+      "notes": "2026-09-03: captured 10.1038/s41581-025-00939-0 (a Publisher Correction). Container `article` resolved; a correction has no figures.",
+      "asset_origins": [
+        "*.nature.com",
+        "media.springernature.com"
+      ]
     },
     {
       "id": "science",
@@ -435,7 +466,11 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: captured 10.1126/scitranslmed.adz6566. Container `article` resolved and 13 images were embedded, but the markup contains no <figure> or <figcaption> element, so the figures are not structurally declared in the captured DOM."
+      "notes": "2026-09-03: captured 10.1126/scitranslmed.adz6566. Container `article` resolved and 13 images were embedded, but the markup contains no <figure> or <figcaption> element, so the figures are not structurally declared in the captured DOM.",
+      "asset_origins": [
+        "*.science.org",
+        "www.science.org"
+      ]
     },
     {
       "id": "elsevier",
@@ -483,7 +518,12 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: captured 10.1053/j.ajkd.2026.05.004 (a commentary). Container `article` resolved; the only <figure> is a boxed-text element, not an article figure."
+      "notes": "2026-09-03: captured 10.1053/j.ajkd.2026.05.004 (a commentary). Container `article` resolved; the only <figure> is a boxed-text element, not an article figure.",
+      "asset_origins": [
+        "ars.els-cdn.com",
+        "*.sciencedirectassets.com",
+        "*.els-cdn.com"
+      ]
     },
     {
       "id": "wiley",
@@ -524,7 +564,11 @@
       ],
       "status": "generic",
       "fixture": null,
-      "notes": "2026-09-03: captured 10.1111/wvn.12608. Container resolved; the only <figure> is a layout holder with no caption. og:title carries the full Wiley Online Library suffix chain."
+      "notes": "2026-09-03: captured 10.1111/wvn.12608. Container resolved; the only <figure> is a layout holder with no caption. og:title carries the full Wiley Online Library suffix chain.",
+      "asset_origins": [
+        "*.wiley.com",
+        "wol-prod-cdn.literatumonline.com"
+      ]
     },
     {
       "id": "pmc",
@@ -566,7 +610,11 @@
       "access_markers": [],
       "status": "supported",
       "fixture": "fixtures/capture-profiles/pmc.html",
-      "notes": "2026-09-03: captured PMC10589027 (open access). Container `main`; one declared figure with a caption. Figure ids carry a publisher suffix (f1-jchim-13-04-074), so the label comes from the alt/caption rung, not the id rung."
+      "notes": "2026-09-03: captured PMC10589027 (open access). Container `main`; one declared figure with a caption. Figure ids carry a publisher suffix (f1-jchim-13-04-074), so the label comes from the alt/caption rung, not the id rung.",
+      "asset_origins": [
+        "cdn.ncbi.nlm.nih.gov",
+        "*.ncbi.nlm.nih.gov"
+      ]
     }
   ]
 }

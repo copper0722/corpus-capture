@@ -123,6 +123,10 @@
           "description": "Required when status is unsupported: what was OBSERVED, not what is assumed.",
           "type": "string",
           "minLength": 1
+        },
+        "asset_origins": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Hosts other than the page's own origin that this publisher serves assets from. A leading `*.` matches the bare domain and any subdomain. Anything not the page origin and not on this list is never fetched; anything that is not the page origin is fetched without the reader's cookies."
         }
       }
     },
@@ -208,6 +212,10 @@
           "description": "Required when status is unsupported: what was OBSERVED, not what is assumed.",
           "type": "string",
           "minLength": 1
+        },
+        "asset_origins": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Hosts other than the page's own origin that this publisher serves assets from. A leading `*.` matches the bare domain and any subdomain. Anything not the page origin and not on this list is never fetched; anything that is not the page origin is fetched without the reader's cookies."
         }
       },
       "allOf": [
