@@ -11,6 +11,15 @@ import { serializePage } from "./serialize.js";
 // it. The options page asks for it and refuses to save anything that is not
 // https (or localhost, for a receiver on the same machine).
 export const DEFAULT_API_BASE = "";
+//: What the producer calls itself in the envelope and the sidecar. Read from the
+//: manifest so the string a receiver records is the version that ran; it used to
+//: be a literal, and it had drifted two minor versions from the manifest.
+// `globalThis.chrome`, not `chrome`: optional chaining does not protect against
+// an identifier that was never declared, and this module is imported by tests
+// that run in node, where there is no extension API at all.
+export const CAPTURE_TOOL = `chrome-capture/${
+  (globalThis.chrome?.runtime?.getManifest?.() || {}).version || "0"
+}`;
 export const PROFILES_KEY = "profileRegistry";
 export const PROFILES_FETCHED_KEY = "profileRegistryFetchedAt";
 export const RECEIPTS_KEY = "receipts";
@@ -407,7 +416,7 @@ export async function submitCapture(capture, capturedAt) {
       meta_sha256: capture.meta_sha256,
       profile: capture.profile_id,
       figures: capture.figures,
-      capture_tool: "chrome-capture/1.2.0",
+      capture_tool: CAPTURE_TOOL,
     }),
   });
   let payload = null;
@@ -445,7 +454,7 @@ export async function downloadFallback(capture, capturedAt) {
     captured_at: capturedAt.toISOString(),
     html_sha256: capture.sha256,
     html_bytes: new TextEncoder().encode(capture.html).length,
-    capture_tool: "chrome-capture/1.2.0",
+    capture_tool: CAPTURE_TOOL,
     payload_name: `${stem}.html`,
     publisher_meta: capture.publisher_meta || {},
     authors: capture.authors || [],

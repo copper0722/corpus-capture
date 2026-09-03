@@ -78,6 +78,43 @@ belong in a file that claims to be one. Images outside the manifest are still
 embedded, so the page stays whole, but they are flagged `decorative` so nothing
 downstream mistakes a masthead for a result.
 
+## What it will not fetch
+
+The extension is a deputy: it holds `<all_urls>` and it fetches with the
+reader's own session, and every asset URL it is handed came out of markup the
+page controls. So the fetch is a decision, not a loop:
+
+| destination | fetched? | cookies? |
+|---|---|---|
+| the captured page's own origin | yes | yes — this is what gets the entitled figure |
+| a CDN named by the publisher's profile (`asset_origins`) | yes | no |
+| anything else | no | — |
+| loopback, RFC1918, link-local, cloud metadata, `.local`, `.internal`, a bare hostname | no | — |
+| plaintext `http`, even same-origin | no | — |
+| anything that answers a redirect | no | — |
+
+A refused asset is counted and shown in the popup rather than dropped quietly.
+If a publisher serves figures from a CDN this does not know about, the fix is a
+line in `profiles/capture_profiles.json`, not a wider permission.
+
+Requests that carry your service token — the registry, the intake, the receipt —
+go out with `redirect: "error"`, no cookies, and a check that the answer came
+from the origin you configured.
+
+## The stored file is inert
+
+Before the artifact exists it goes through an element and attribute
+**allowlist**. An element nobody listed is unwrapped and its text kept; the ones
+that carry their own payload are removed with their subtree, `<base>`,
+`<meta http-equiv>`, forms, `<source srcset>`, `<link>`, SVG and media among
+them. CSS is filtered wherever it appears: no `@import`, no `expression()`, no
+`javascript:` URL, and nothing that could end the element it is written into.
+
+That bounds what is in the file. It cannot bound what a viewer does with it, so
+a receiver must still serve a stored capture from an opaque origin under a
+restrictive CSP — the exact header is in
+[`docs/protocol.md`](docs/protocol.md).
+
 ## Publisher profiles
 
 The registry is **data**, served by the receiver at
@@ -85,6 +122,10 @@ The registry is **data**, served by the receiver at
 the extension, any acquisition script, and the receiver's own mapping; written
 three times they drift, and the copy that drifts silently is the one nobody runs
 by hand.
+
+`asset_origins` is part of a profile too: the hosts, other than the page's own
+origin, that this publisher serves figures and stylesheets from. Nothing else is
+fetched.
 
 `status` is a measurement, not a plan. A profile is `supported` only when a
 committed fixture exists and a test asserts the container, the identity and the

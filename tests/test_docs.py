@@ -96,6 +96,35 @@ def test_the_receiver_never_joins_caller_text_onto_a_path():
     assert "os.replace(staging" in source
 
 
+def test_every_audit_finding_has_a_remediation_row():
+    """The audit is a document, and a document drifts from the code it describes.
+
+    This is the cheapest available guard: every finding the report raises must
+    appear in the remediation table with a commit, and every test named there
+    must exist. It cannot tell whether the fix is right -- the tests in those
+    files do that -- but it can tell that a finding was not quietly forgotten.
+    """
+
+    audit = (ROOT / "docs" / "SECURITY-AUDIT-2026-09-03.md").read_text(encoding="utf-8")
+    report, _, remediation = audit.partition("## Remediation")
+    assert remediation, "the remediation table is missing"
+
+    raised = set(re.findall(r"^### (F-\d\d) ", report, re.M))
+    assert len(raised) == 11, sorted(raised)
+    rows = dict(re.findall(r"^\| (F-\d\d) \| \w+ \| `([0-9a-f]{7,40})`", remediation, re.M))
+    assert set(rows) == raised, sorted(raised - set(rows))
+
+    for name in set(re.findall(r"`(tests/test_[a-z_]+\.py)", remediation)):
+        assert (ROOT / name).is_file(), name
+
+
+def test_the_changelog_cites_the_audit():
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "### Security" in changelog
+    assert "SECURITY-AUDIT-2026-09-03.md" in changelog
+    assert "F-01" in changelog and "F-11" in changelog
+
+
 def test_the_audit_scope_is_present_for_the_reviewer():
     scope = (ROOT / "docs" / "SECURITY-AUDIT-SCOPE.md").read_text(encoding="utf-8")
     for heading in ("Manifest and permission minimisation", "Token storage and transport",

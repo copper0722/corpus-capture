@@ -10,6 +10,7 @@ whatever receives the capture.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from datetime import UTC, datetime
@@ -62,6 +63,22 @@ def test_the_serializer_takes_the_bytes_the_reader_actually_saw():
     """`currentSrc`, not `src`: a lazy figure's src attribute is a placeholder."""
 
     assert "currentSrc" in _read("serialize.js")
+
+
+def test_the_producer_names_the_version_that_actually_ran():
+    """The tool string was a literal, and it had drifted two minor versions.
+
+    A receiver records `capture_tool` and later uses it to explain a capture's
+    shape. A literal that disagrees with the manifest makes that explanation
+    wrong in exactly the case where somebody is trying to work out which
+    version produced a bad artifact.
+    """
+
+    manifest = json.loads(_read("manifest.json"))
+    source = _read("capture.js")
+    assert "getManifest" in source, "the version is a literal again"
+    assert not re.search(r'"chrome-capture/\d', source), "a hardcoded version is back"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"])
 
 
 def test_the_client_and_the_receiver_share_one_sidecar_schema():

@@ -64,11 +64,45 @@
 沒被列入 manifest 的圖片仍然會內嵌（維持頁面完整），但標記為 `decorative`，讓下游
 不會把刊頭當成研究結果。
 
+## 它不會去抓什麼
+
+擴充是個代理人：它有 `<all_urls>`，而且帶著你自己的 session 去抓，但每一個資產網址
+都出自頁面自己控制的 markup。所以「抓不抓」是一個判斷，不是一個迴圈：
+
+| 目的地 | 抓嗎 | 帶 cookie 嗎 |
+|---|---|---|
+| 被擷取頁面自己的 origin | 抓 | 帶——這就是拿得到授權圖檔的原因 |
+| 設定檔列出的出版社 CDN（`asset_origins`） | 抓 | 不帶 |
+| 其他任何來源 | 不抓 | — |
+| loopback、RFC1918、link-local、雲端 metadata、`.local`、`.internal`、單段主機名 | 不抓 | — |
+| 明文 `http`，同 origin 也一樣 | 不抓 | — |
+| 任何會回 redirect 的 | 不抓 | — |
+
+被拒的資產會計數並顯示在 popup，不會默默消失。出版社若把圖放在沒登記的 CDN，解法是
+在 `profiles/capture_profiles.json` 加一行，不是放寬權限。
+
+帶 token 的請求（設定檔、入庫、收據）一律 `redirect: "error"`、不帶 cookie，並檢查
+回應確實來自你設定的那個 origin。
+
+## 存下來的檔案是惰性的
+
+產出 artifact 前會過一次元素與屬性的**白名單**：沒列到的元素會被拆掉標籤但留下文字，
+自己帶 payload 的整棵移除——`<base>`、`<meta http-equiv>`、表單、`<source srcset>`、
+`<link>`、SVG、影音都在內。CSS 不論出現在哪裡都過同一套過濾：不准 `@import`、
+`expression()`、`javascript:` URL，也不准出現能結束自己所在元素的序列。
+
+這限制的是「檔案裡有什麼」，限制不了「檢視器拿它做什麼」，所以接收端仍必須用 opaque
+origin 加嚴格 CSP 來供應存下來的 capture，確切的標頭寫在
+[`docs/protocol.md`](docs/protocol.md)。
+
 ## 出版社設定檔
 
 設定檔是**資料**，由接收端提供（`GET /api/v1/capture/profiles`），擴充啟動時抓取並
 快取；抓不到就用快取，快取也沒有就用通用選擇器。一份資料同時驅動擴充、抓取腳本與
 接收端的對應，不會有三份會各自漂移的複本。
+
+`asset_origins` 也是設定檔的一部分：這家出版社除了頁面本身 origin 以外，還會從哪些
+主機供應圖檔與樣式。其他都不抓。
 
 `status` 是量測結果不是計畫：要有 fixture 測試通過才算 `supported`；`unsupported`
 必須寫出實際觀察到的 `reason`。
