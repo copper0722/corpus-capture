@@ -107,6 +107,16 @@ producer 只交出 bytes 與觀察，不交出身分：envelope 在結構上就�
 fixture 是骨架：保留結構與 metadata，內文每段只留第一句，圖片換成 1×1 佔位圖；有
 測試直接對 commit 進去的 bytes 檢查這件事。
 
+## 被其他 repo 引用時
+
+擴充與註冊表的單一真相在這個 repo。引用方（`git subtree`、submodule 或複製）固定在
+某個 release tag，要升級就明確拉新的 tag，不改自己那份複本。在下游改掉的 selector
+對別人一點用都沒有，而且這種分歧要等到同一家出版社的兩次擷取結果不一致才會被發現。
+
+`profiles/capture_profiles.json` 裡的 fixture 路徑是相對於**這個 repo** 的根目錄，
+所以 `corpus_capture.profiles.fixture_path()` 是從註冊表自己的位置解析，不是從引用方
+的根目錄。
+
 ## 授權
 
 MIT，見 [`LICENSE`](LICENSE)。

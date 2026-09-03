@@ -154,6 +154,18 @@ Fixtures in this repository are skeletons: structure and metadata kept, article
 prose cut to one sentence per block, figures replaced by a 1×1 placeholder. A
 test enforces that on the committed bytes.
 
+## Vendoring
+
+This repository is the source of truth for the extension and the registry. A
+consumer that vendors it — as a `git subtree`, a submodule, or a copy — pins a
+release tag and pulls a newer one deliberately; it does not edit its copy. A
+selector fixed downstream is a selector that fixes nothing for anyone else, and
+the divergence is invisible until two captures of the same publisher disagree.
+
+Fixture paths inside `profiles/capture_profiles.json` are relative to THIS
+repository's root, so `corpus_capture.profiles.fixture_path()` resolves them
+from the registry's own location rather than from the consumer's.
+
 ## Licence
 
 MIT. See [`LICENSE`](LICENSE).
