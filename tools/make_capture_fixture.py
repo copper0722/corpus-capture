@@ -39,6 +39,29 @@ PLACEHOLDER = (
 )
 MAX_SENTENCE_WORDS = 20
 
+#: Removed with their subtree. A fixture is a page's SHAPE; none of these is
+#: shape, and every one of them either runs, fetches, or navigates when somebody
+#: opens the file -- which people do, because a fixture is the easiest thing in
+#: the repository to double-click.
+DROP_ELEMENTS = (
+    "script", "noscript", "iframe", "frame", "frameset", "object", "embed",
+    "applet", "template", "base", "link", "style", "svg", "math", "canvas",
+    "audio", "video", "source", "track", "form", "input", "button", "select",
+    "option", "optgroup", "textarea", "fieldset", "legend", "dialog", "portal",
+    "slot",
+)
+#: Attributes a fixture keeps. Everything else goes, including every `on*`
+#: handler and every attribute that names a resource to fetch.
+KEPT_ATTRIBUTES = {
+    "id", "class", "lang", "dir", "title", "alt", "src", "href", "name",
+    "property", "content", "charset", "colspan", "rowspan", "headers", "scope",
+    "span", "start", "value", "datetime", "itemprop", "role",
+}
+#: How much of a table survives. Structure only: the reducer shortens prose but
+#: a table IS its cell values, so a rights-restricted table passed a paragraph
+#: word-count check untouched.
+TABLE_PLACEHOLDER = "table content omitted from the fixture"
+
 
 def _first_sentence(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
@@ -47,6 +70,67 @@ def _first_sentence(text: str) -> str:
     sentence = re.split(r"(?<=[.!?。！？])\s", text, maxsplit=1)[0]  # noqa: RUF001
     words = sentence.split()
     return " ".join(words[:MAX_SENTENCE_WORDS])
+
+
+def _make_inert(root) -> None:
+    """Strip everything that runs, fetches, or navigates.
+
+    F-07 in the 2026-09-03 audit: the generator removed selected elements and
+    rewrote selected `img` fields, which left `on*` handlers and live `srcset`
+    values in bytes that are published under an MIT licence and distributed in
+    the sdist. A fixture must be safe to open, so this is an allowlist over
+    attributes and a drop list over elements, not a list of known-bad names.
+    """
+
+    for node in root.find_all(list(DROP_ELEMENTS)):
+        node.decompose()
+    for node in root.find_all("meta"):
+        # The declaring half of <meta> is what identity is read from; the
+        # http-equiv half navigates and sets policy.
+        if node.has_attr("http-equiv"):
+            node.decompose()
+    for node in root.find_all(True):
+        for name in list(node.attrs):
+            lowered = name.lower()
+            if lowered.startswith(("aria-", "data-")) and not lowered.startswith("data-src"):
+                continue
+            if lowered not in KEPT_ATTRIBUTES:
+                del node.attrs[name]
+                continue
+            value = node.attrs[name]
+            if lowered in ("src", "href") and isinstance(value, str):
+                text = value.strip()
+                # A fixture may point at nothing that is fetched or executed.
+                if lowered == "src" and not text.startswith("data:"):
+                    node.attrs[name] = PLACEHOLDER
+                elif lowered == "href" and not re.match(r"^(https?:|#|/|$)", text, re.I):
+                    del node.attrs[name]
+
+
+def _placeholder_tables(soup, root) -> None:
+    """A table keeps its caption and loses its cells.
+
+    F-08: the reducer shortens direct text, so a table full of two-word cells
+    passed every word-count check with its values intact. Whether that is a
+    rights problem depends on the source, and a generator that only works for
+    open-access inputs is a generator waiting to be pointed at something else.
+    """
+
+    for table in root.find_all("table"):
+        caption = table.find("caption")
+        table.attrs = {
+            key: value for key, value in table.attrs.items() if key in ("id", "class")
+        }
+        table.attrs["data-fixture"] = "table-omitted"
+        keep = caption.extract() if caption is not None else None
+        table.clear()
+        if keep is not None:
+            table.append(keep)
+        row = soup.new_tag("tr")
+        cell = soup.new_tag("td")
+        cell.string = TABLE_PLACEHOLDER
+        row.append(cell)
+        table.append(row)
 
 
 def _reduce_prose(container) -> None:
@@ -111,10 +195,9 @@ def build(source: Path, url: str, profile_id: str) -> str:
 
     _reduce_prose(container)
 
+    _placeholder_tables(soup, container)
     for image in container.find_all("img"):
         image["src"] = PLACEHOLDER
-        for attribute in ("srcset", "sizes", "data-src", "style", "width", "height"):
-            image.attrs.pop(attribute, None)
 
     body = soup.new_tag("body")
     body.append(container)
@@ -124,6 +207,7 @@ def build(source: Path, url: str, profile_id: str) -> str:
     # without the original capture; one banner per document, not one per pass.
     for stale in document.find_all("meta", attrs={"name": "x-corpus-fixture"}):
         stale.decompose()
+    _make_inert(document)
     banner = document.new_tag("meta")
     banner.attrs["name"] = "x-corpus-fixture"
     banner.attrs["content"] = (
