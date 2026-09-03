@@ -19,6 +19,7 @@ from corpus_capture.profiles import (
     REGISTRY_PATH,
     SCHEMA_VERSION,
     ProfileRegistryError,
+    fixture_path,
     load_registry,
     profile_for_url,
     profile_status_table,
@@ -36,11 +37,27 @@ from corpus_capture.sidecar import (
     normalize_doi,
     validate_sidecar,
 )
+from corpus_capture.submission import (
+    ALLOWED_FIELDS,
+    FORBIDDEN_FIELDS,
+    MAX_BODY_BYTES,
+    MAX_HTML_BYTES,
+    MAX_METADATA_BYTES,
+    ReceiptStore,
+    SubmissionError,
+    enforce_body_size,
+    validate_submission,
+)
 
 __version__ = "0.1.0"
 
 __all__ = [
     "ACCESS_CLASSES",
+    "ALLOWED_FIELDS",
+    "FORBIDDEN_FIELDS",
+    "MAX_BODY_BYTES",
+    "MAX_HTML_BYTES",
+    "MAX_METADATA_BYTES",
     "PRODUCER_KEY",
     "REGISTRY_PATH",
     "SCHEMA_VERSION",
@@ -49,13 +66,17 @@ __all__ = [
     "FigureManifest",
     "FigureRecord",
     "ProfileRegistryError",
+    "ReceiptStore",
     "SidecarError",
+    "SubmissionError",
     "__version__",
     "build_figure_manifest",
     "capture_slug",
     "download_basename",
+    "enforce_body_size",
     "figure_label",
     "find_article_container",
+    "fixture_path",
     "is_decorative_asset",
     "load_registry",
     "normalize_doi",
@@ -64,4 +85,5 @@ __all__ = [
     "public_registry",
     "validate_registry",
     "validate_sidecar",
+    "validate_submission",
 ]

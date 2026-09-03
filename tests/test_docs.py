@@ -59,6 +59,34 @@ def test_the_receiver_recomputes_the_hash_and_refuses_a_mismatch():
     assert "sha256_mismatch" in source
 
 
+def test_the_receiver_authenticates_before_it_reads_the_body():
+    """F-09: the order is the fix. A caller with no token never reaches the parser."""
+
+    source = _receiver_source()
+    authenticate = source.index("_authenticate(x_corpus_service_token)")
+    for later in ("enforce_body_size(", "_read_bounded(request)", "json.loads(raw)",
+                  "validate_submission(payload)"):
+        assert authenticate < source.index(later), later
+
+
+def test_the_receiver_bounds_the_body_it_reads():
+    source = _receiver_source()
+    assert "async for chunk in request.stream()" in source
+    assert "payload_too_large" in source
+    # The old signature parsed a whole dict before anything looked at it.
+    assert "Body()" not in source
+
+
+def test_the_receiver_keeps_no_unbounded_state():
+    """F-10: receipts expire, and the inbox has a ceiling."""
+
+    source = _receiver_source()
+    assert "ReceiptStore(" in source
+    assert "ttl_seconds" in source and "max_entries" in source
+    assert "MAX_ENVELOPES" in source and "inbox_full" in source
+    assert "RECEIPTS: dict" not in source
+
+
 def test_the_receiver_never_joins_caller_text_onto_a_path():
     """The one bug this example must not teach."""
 
