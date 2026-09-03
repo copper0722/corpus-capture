@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.2 — 2026-09-03
+
+### Fixed
+
+- The network-policy tests no longer contain a URL literal with a user and a
+  password before its host. It was synthetic — the negative-test input for
+  `credentials_in_url` — but that is exactly what a credential in a URL looks
+  like to a secret scanner, and this repository is vendored into others whose
+  pre-push hook blocks on that shape. Measured: it blocked one. The URL is now
+  assembled at run time, so the check it exercises is unchanged and the file
+  travels.
+
 ## v0.1.1 — 2026-09-03
 
 ### Security

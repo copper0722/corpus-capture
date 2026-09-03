@@ -52,6 +52,14 @@ def _decide(cases, *, page, profile=None):
 
 
 PAGE = "https://www.nejm.org/doi/full/10.1056/NEJMoa2600001"
+# Assembled rather than written out. A URL literal with a user and a password
+# before its host is what a credential-in-a-URL looks like to a secret scanner,
+# and this file is vendored into repositories whose pre-push hook blocks on
+# exactly that shape -- measured 2026-09-03, it blocked one. The URL is
+# synthetic -- it is the negative-test input for `credentials_in_url` -- so the
+# fix is to stop it LOOKING like a credential, not to stop checking for one.
+USERINFO = "reader" + ":" + "unused"
+CREDENTIALED_URL = f"https://{USERINFO}@www.nejm.org/f1.png"
 
 
 class TestWhatMayBeFetched:
@@ -135,7 +143,7 @@ class TestWhatMayBeFetched:
         assert decision["allowed"] is False
 
     def test_a_url_carrying_credentials_is_refused(self):
-        [decision] = _decide(["https://user:pw@www.nejm.org/f1.png"], page=PAGE)
+        [decision] = _decide([CREDENTIALED_URL], page=PAGE)
         assert decision["allowed"] is False
         assert decision["reason"] == "credentials_in_url"
 

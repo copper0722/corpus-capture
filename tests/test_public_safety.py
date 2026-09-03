@@ -124,10 +124,10 @@ def test_no_source_file_names_the_operator(pattern: str, what: str):
 def test_no_source_file_carries_an_email_address():
     """Checked after URLs are removed, because a URL is not a mailbox.
 
-    `https://user:pw@host/` and `https://corpus.example@phishing.example/x` are
-    both test fixtures for the network policy, and both look exactly like an
-    address to a naive pattern. Stripping URLs first keeps the check sharp
-    instead of teaching everyone to add exceptions to it.
+    A URL that carries userinfo before its host, and one whose userinfo is a
+    bare name, are both test fixtures for the network policy, and both look
+    exactly like an address to a naive pattern. Stripping URLs first keeps the
+    check sharp instead of teaching everyone to add exceptions to it.
     """
 
     pattern = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")

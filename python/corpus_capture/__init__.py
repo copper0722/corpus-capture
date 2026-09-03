@@ -49,7 +49,7 @@ from corpus_capture.submission import (
     validate_submission,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "ACCESS_CLASSES",
