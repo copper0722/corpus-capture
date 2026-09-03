@@ -12,8 +12,17 @@
 // nonce. A nonce, rather than an index alone, because the page's own text is
 // inside the string we are about to search and replace, and an article about web
 // scraping is entirely capable of containing the literal word we chose.
-export function serializePage(nonce, profile) {
+export function serializePage(nonce, profile, limits) {
   profile = profile || {};
+  // Passed in rather than imported: this function is injected into the page as
+  // a stringified function, so it has no module scope. extension/limits.js is
+  // the one table; this is a copy of the defaults for the case where an older
+  // caller does not pass it, and it must stay in step -- a test asserts it.
+  const cap = Object.assign({
+    maxAssets: 300, maxFigures: 200, maxDocumentChars: 16 * 1024 * 1024,
+    maxMetaKeys: 200, maxMetaValues: 100, maxMetaValueChars: 2000,
+    maxCaptionChars: 2000, maxAltChars: 500, maxAuthors: 100,
+  }, limits || {});
   const sel = (key, fallback) =>
     (Array.isArray(profile[key]) && profile[key].length ? profile[key] : fallback);
   const containerSelectors = sel("article_container_selectors", [
@@ -64,11 +73,19 @@ export function serializePage(nonce, profile) {
 
   const token = (index) => `corpus-asset-${nonce}-${index}-end`;
   const assets = [];
+  let assetsOverflow = 0;
   const claim = (url, kind) => {
-    const absolute = new URL(url, document.baseURI).href;
+    let absolute = "";
+    try { absolute = new URL(url, document.baseURI).href; } catch (_) { return null; }
     if (!/^https?:/i.test(absolute)) return null;
     const existing = assets.findIndex((a) => a.url === absolute && a.kind === kind);
     if (existing >= 0) return token(existing);
+    // The ceiling is not a policy about what is worth keeping. It is what stops
+    // a page from choosing how many authenticated requests this makes.
+    if (assets.length >= cap.maxAssets) {
+      assetsOverflow += 1;
+      return null;
+    }
     assets.push({ index: assets.length, url: absolute, kind });
     return token(assets.length - 1);
   };
@@ -119,14 +136,16 @@ export function serializePage(nonce, profile) {
     for (const selector of captionSelectors) {
       let found = null;
       try { found = node.querySelector && node.querySelector(selector); } catch (_) { found = null; }
-      if (found) return (found.innerText || "").replace(/\s+/g, " ").trim().slice(0, 2000);
+      if (found) {
+        return (found.innerText || "").replace(/\s+/g, " ").trim().slice(0, cap.maxCaptionChars);
+      }
     }
     return "";
   };
   const claimFigure = (node, img, selector, rank) => {
-    if (claimed.has(img)) return;
+    if (claimed.has(img) || figureRows.length >= cap.maxFigures) return;
     const caption = captionOf(node);
-    const alt = (img.getAttribute("alt") || "").trim();
+    const alt = (img.getAttribute("alt") || "").trim().slice(0, cap.maxAltChars);
     const elementId = (node.id || img.id || "").trim();
     const label = labelFor(elementId, alt, caption);
     if (!label) return;
@@ -207,11 +226,12 @@ export function serializePage(nonce, profile) {
   const declared = new Map();
   for (const node of document.querySelectorAll("meta[name], meta[property]")) {
     const key = String(node.getAttribute("name") || node.getAttribute("property") || "")
-      .trim().toLowerCase();
-    const value = String(node.content || "").trim();
+      .trim().toLowerCase().slice(0, 200);
+    const value = String(node.content || "").trim().slice(0, cap.maxMetaValueChars);
     if (!key || !value) continue;
+    if (!declared.has(key) && declared.size >= cap.maxMetaKeys) continue;
     if (!declared.has(key)) declared.set(key, []);
-    if (declared.get(key).length < 200) declared.get(key).push(value);
+    if (declared.get(key).length < cap.maxMetaValues) declared.get(key).push(value);
   }
   const metaValue = (...names) => {
     for (const name of names) {
@@ -223,7 +243,7 @@ export function serializePage(nonce, profile) {
   const metaList = (...names) => {
     for (const name of names) {
       const values = declared.get(name.toLowerCase());
-      if (values && values.length) return values.slice(0, 100);
+      if (values && values.length) return values.slice(0, cap.maxAuthors);
     }
     return [];
   };
@@ -256,9 +276,18 @@ export function serializePage(nonce, profile) {
     .sort()
     .join("\u001e");
 
+  const html = `<!doctype html>\n${clone.outerHTML}`;
+  // Refused, not truncated: cutting a document in half produces markup that
+  // parses into something nobody wrote, and storing that as the article is
+  // worse than saying the page was too large.
+  if (html.length > cap.maxDocumentChars) {
+    return { error: "page_too_large", bytes: html.length, limit: cap.maxDocumentChars };
+  }
+
   return {
-    html: `<!doctype html>\n${clone.outerHTML}`,
+    html,
     assets,
+    assets_overflow: assetsOverflow,
     url: location.href,
     profile_id: String(profile.id || "generic"),
     container_selector: containerSelector,

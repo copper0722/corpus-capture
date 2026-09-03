@@ -1,5 +1,6 @@
 "use strict";
 
+import { LIMITS } from "./limits.js";
 import { assetDecision, hostMatches, sameOrigin } from "./net-policy.js";
 import { sanitizeCss, sanitizeDocument, serializeDocument } from "./sanitize.js";
 import { serializePage } from "./serialize.js";
@@ -14,10 +15,10 @@ export const PROFILES_KEY = "profileRegistry";
 export const PROFILES_FETCHED_KEY = "profileRegistryFetchedAt";
 export const RECEIPTS_KEY = "receipts";
 export const MAX_RECEIPTS = 20;
-// The server refuses a payload over 32 MiB. Stop inlining below that so a page
-// with a hundred figures produces a large capture instead of a rejected one.
-const MAX_INLINE_BYTES = 24 * 1024 * 1024;
-const ASSET_TIMEOUT_MS = 20000;
+// Every ceiling lives in limits.js, including the copy the injected serializer
+// carries, so there is one table rather than numbers spread across two worlds.
+const MAX_INLINE_BYTES = LIMITS.maxInlineBytes;
+const ASSET_TIMEOUT_MS = LIMITS.assetTimeoutMs;
 
 // Every request that carries the service token goes through this. `redirect:
 // "error"` is the point: a receiver that answers 30x -- because it was
@@ -177,7 +178,48 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-async function fetchAsset(url, credentials) {
+/**
+ * Read at most `cap` bytes, and stop the transfer rather than the allocation.
+ *
+ * `arrayBuffer()` materializes whatever arrives before anything can measure it,
+ * so a response with no `content-length` -- or a dishonest one -- was a
+ * ceiling that only applied after the memory had been spent. The declared
+ * length is checked first because it is free, and then disbelieved.
+ */
+export async function readBounded(response, cap, controller) {
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > cap) {
+    controller.abort();
+    return null;
+  }
+  const reader = response.body && response.body.getReader
+    ? response.body.getReader() : null;
+  if (!reader) {
+    const buffer = new Uint8Array(await response.arrayBuffer());
+    return buffer.length > cap ? null : buffer;
+  }
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > cap) {
+      controller.abort();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+}
+
+async function fetchAsset(url, credentials, cap) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ASSET_TIMEOUT_MS);
   try {
@@ -197,8 +239,8 @@ async function fetchAsset(url, credentials) {
       signal: controller.signal,
     });
     if (!response.ok || response.redirected) return null;
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    if (!buffer.length) return null;
+    const buffer = await readBounded(response, cap, controller);
+    if (!buffer || !buffer.length) return null;
     const type = (response.headers.get("content-type") || "").split(";")[0].trim();
     return { bytes: buffer, type };
   } catch (_) {
@@ -249,8 +291,12 @@ export async function inlineAssets(page, onProgress, profile) {
     // and with whose cookies, is decided before anything touches the network.
     const decision = assetDecision(asset.url, { pageUrl: page.url, profile });
     if (!decision.allowed) refused.push({ asset_url: asset.url, reason: decision.reason });
-    const fetched = decision.allowed && budget > 0 && targets
-      ? await fetchAsset(decision.url, decision.credentials)
+    // The per-asset ceiling and what is left of the aggregate one, whichever
+    // is smaller: an asset that cannot fit in the budget must not be read at
+    // all, let alone read and then discarded.
+    const cap = Math.min(LIMITS.maxAssetBytes, budget);
+    const fetched = decision.allowed && cap > 0 && targets
+      ? await fetchAsset(decision.url, decision.credentials, cap)
       : null;
     if (!fetched || fetched.bytes.length > budget) {
       dropped += 1;
@@ -287,9 +333,10 @@ export async function capturePage(tabId, onProgress, profile) {
   const [injected] = await chrome.scripting.executeScript({
     target: { tabId },
     func: serializePage,
-    args: [nonce, profile || {}],
+    args: [nonce, profile || {}, LIMITS],
   });
   const page = injected && injected.result;
+  if (page && page.error) throw new Error(page.error);
   if (!page || !page.html) throw new Error("page_not_serializable");
   page.nonce = nonce;
   const { html, inlined, dropped, refused, removed } = await inlineAssets(
@@ -301,13 +348,19 @@ export async function capturePage(tabId, onProgress, profile) {
   const doi = normalizeDoi(page.meta.doi)
     || doiFromUrl(page.canonical_url)
     || doiFromUrl(page.url);
+  const payloadBytes = new TextEncoder().encode(html).length;
+  // The receiver refuses this too, but refusing it here means the bytes are
+  // never sent and the reader is told why rather than reading `http_413`.
+  if (payloadBytes > LIMITS.maxPayloadBytes) throw new Error("capture_too_large");
+
   return {
     html,
+    bytes: payloadBytes,
     sha256: await sha256Hex(html),
     url: page.canonical_url || page.url,
     final_url: page.url,
     doi,
-    title: (page.meta.title || "").slice(0, 500) || null,
+    title: (page.meta.title || "").slice(0, LIMITS.maxTitleChars) || null,
     date_published: (page.meta.date_published || "").slice(0, 32) || null,
     publisher_meta: page.publisher_meta || {},
     authors: page.authors || [],
@@ -318,7 +371,10 @@ export async function capturePage(tabId, onProgress, profile) {
     scoped_to_article: Boolean(page.scoped_to_article),
     figures: page.figures || [],
     decorative: page.decorative || [],
-    images: { inlined, dropped, total: page.assets.length, refused: refused.length },
+    images: {
+      inlined, dropped, total: page.assets.length, refused: refused.length,
+      overflow: page.assets_overflow || 0,
+    },
     // Kept, because "the capture is missing a figure" and "the capture refused
     // to fetch a figure from somewhere it should not have" are different facts
     // and only one of them is a bug in the profile.
