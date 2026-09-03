@@ -111,6 +111,36 @@ identity and rights are not the producer's to assert. It is written to a staging
 directory and moved into place with a single rename, so a reader never observes
 a half-written envelope.
 
+## The payload is inert, and the viewer must keep it that way
+
+The producer applies an element and attribute **allowlist** before the artifact
+exists: an element nobody listed is unwrapped and its text kept, and the handful
+that carry their own payload are removed outright — `script`, `iframe`,
+`object`, `embed`, `svg`, `math`, `canvas`, media and `track`, `form` and every
+form control, `base`, `link`, `source`, and any `meta` carrying `http-equiv`.
+Attributes survive only from a list: identity, presentation, table geometry,
+`aria-*`, `data-*`, and the two URL attributes, whose values must be `https`,
+`http`, `mailto`, `data:` or a fragment. CSS — fetched, inline `<style>`, or a
+`style` attribute — goes through the same filter: no `@import`, no
+`expression()`, no `behavior`, no `javascript:` URL, and no sequence that could
+end the element it is written into.
+
+**A receiver must still serve it as untrusted content.** The producer's
+allowlist bounds what is in the file; it cannot bound what a viewer does with
+it. Serve or render a stored capture from an opaque origin — a sandboxed iframe
+without `allow-same-origin`, or a distinct origin that shares nothing — under:
+
+```
+Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline';
+    base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox
+```
+
+`img-src data:` and `style-src 'unsafe-inline'` are what make an embedded figure
+and its stylesheet render at all; everything else is off, so the artifact cannot
+reach the network, navigate, or borrow the reader's session. The extension's own
+`content_security_policy` governs extension pages only and has no authority over
+a file a receiver serves.
+
 ## Sidecar — `corpus-capture-sidecar-v2`
 
 The one document both the online and the offline path emit, so a receiver has a

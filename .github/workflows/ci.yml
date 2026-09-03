@@ -57,7 +57,16 @@ jobs:
         # runner without it would report green having tested nothing.
         run: node --version
 
+      - name: Test-only JavaScript dependencies
+        # linkedom gives the sanitizer tests a real DOM. Nothing here ships in
+        # the extension, which loads no module but its own.
+        run: npm ci --no-audit --no-fund
+
       - name: Tests
+        # A skip is not a pass: with this set, a missing `npm ci` fails the run
+        # instead of quietly skipping every sanitizer test.
+        env:
+          CORPUS_CAPTURE_REQUIRE_DOM: '1'
         run: pytest
 
       - name: Public safety scan

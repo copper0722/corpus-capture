@@ -1,6 +1,7 @@
 "use strict";
 
 import { assetDecision, hostMatches, sameOrigin } from "./net-policy.js";
+import { sanitizeCss, sanitizeDocument, serializeDocument } from "./sanitize.js";
 import { serializePage } from "./serialize.js";
 
 // No default endpoint ships with the extension. The receiver is a corpus you
@@ -207,23 +208,35 @@ async function fetchAsset(url, credentials) {
   }
 }
 
-function absolutizeCss(css, base) {
-  // Relative url() references would resolve against the reader's origin once the
-  // stylesheet is inlined, which is a different site. Absolutizing keeps them
-  // pointing at the publisher; the reader's CSP still blocks the fetch, so this
-  // is about not LYING in the artifact rather than about rendering.
-  return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (whole, quote, href) => {
-    if (/^(data:|https?:|#)/i.test(href)) return whole;
-    try {
-      return `url(${quote}${new URL(href, base).href}${quote})`;
-    } catch (_) {
-      return whole;
-    }
-  });
-}
-
 export async function inlineAssets(page, onProgress, profile) {
-  let html = page.html;
+  // The artifact is built as a DOM and serialized once, at the end.
+  //
+  // It used to be built by substituting fetched bytes into an already
+  // serialized string, and that is a parser the code did not know it had: a
+  // stylesheet containing `</STYLE` closed the element the CSS was being
+  // written into, and everything after it was markup in the stored file. The
+  // escape that guarded it matched only the lowercase spelling. Setting
+  // `style.textContent` on a node cannot do that, whatever the bytes say,
+  // because at no point are they parsed as HTML.
+  if (typeof DOMParser === "undefined") throw new Error("dom_parser_required");
+  const doc = new DOMParser().parseFromString(page.html, "text/html");
+
+  // Where each placeholder ended up, found once. An asset referenced by three
+  // images carries one token, so the map is token -> nodes.
+  const imageNodes = new Map();
+  const styleNodes = new Map();
+  const push = (map, key, node) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(node);
+  };
+  for (const image of doc.querySelectorAll("img[src]")) {
+    push(imageNodes, image.getAttribute("src"), image);
+  }
+  for (const style of doc.querySelectorAll("style")) {
+    const found = /^\s*\/\*(corpus-asset-[0-9a-f]+-\d+-end)\*\/\s*$/.exec(style.textContent || "");
+    if (found) push(styleNodes, found[1], style);
+  }
+
   let budget = MAX_INLINE_BYTES;
   let inlined = 0;
   let dropped = 0;
@@ -231,35 +244,42 @@ export async function inlineAssets(page, onProgress, profile) {
   for (const asset of page.assets) {
     if (onProgress) onProgress(asset.index + 1, page.assets.length);
     const token = `corpus-asset-${page.nonce}-${asset.index}-end`;
+    const targets = asset.kind === "style" ? styleNodes.get(token) : imageNodes.get(token);
     // Every URL here came out of page-controlled markup. What may be fetched,
     // and with whose cookies, is decided before anything touches the network.
     const decision = assetDecision(asset.url, { pageUrl: page.url, profile });
     if (!decision.allowed) refused.push({ asset_url: asset.url, reason: decision.reason });
-    const fetched = decision.allowed && budget > 0
+    const fetched = decision.allowed && budget > 0 && targets
       ? await fetchAsset(decision.url, decision.credentials)
       : null;
     if (!fetched || fetched.bytes.length > budget) {
       dropped += 1;
-      // Removing the token rather than leaving it keeps the artifact honest: a
-      // broken data URI in the stored HTML would read as a corrupt capture, and
-      // an unreplaced token would read as a live remote reference.
-      html = asset.kind === "style"
-        ? html.split(`/*${token}*/`).join("")
-        : html.split(token).join("");
+      // A dropped asset leaves nothing behind. A leftover placeholder would
+      // read as a live remote reference, and a half-written data URI would read
+      // as a corrupt capture; neither is what happened.
+      for (const node of targets || []) {
+        if (asset.kind === "style") node.remove();
+        else node.removeAttribute("src");
+      }
       continue;
     }
     budget -= fetched.bytes.length;
     inlined += 1;
-    if (asset.kind === "style") {
-      const css = absolutizeCss(new TextDecoder().decode(fetched.bytes), asset.url)
-        .split("</style").join("<\\/style");
-      html = html.split(`/*${token}*/`).join(css);
-    } else {
-      const type = fetched.type && fetched.type.startsWith("image/") ? fetched.type : "image/jpeg";
-      html = html.split(token).join(`data:${type};base64,${bytesToBase64(fetched.bytes)}`);
+    for (const node of targets) {
+      if (asset.kind === "style") {
+        node.textContent = sanitizeCss(new TextDecoder().decode(fetched.bytes), asset.url);
+      } else {
+        const type = fetched.type && fetched.type.startsWith("image/") ? fetched.type : "image/jpeg";
+        node.setAttribute("src", `data:${type};base64,${bytesToBase64(fetched.bytes)}`);
+      }
     }
   }
-  return { html, inlined, dropped, refused };
+
+  // Last, over everything -- including whatever a stylesheet or an alt text
+  // brought in. The in-page pass was a size measure; this is the one that
+  // decides what the artifact contains.
+  const removed = sanitizeDocument(doc, { baseUrl: page.url });
+  return { html: serializeDocument(doc), inlined, dropped, refused, removed };
 }
 
 export async function capturePage(tabId, onProgress, profile) {
@@ -272,7 +292,9 @@ export async function capturePage(tabId, onProgress, profile) {
   const page = injected && injected.result;
   if (!page || !page.html) throw new Error("page_not_serializable");
   page.nonce = nonce;
-  const { html, inlined, dropped, refused } = await inlineAssets(page, onProgress, profile);
+  const { html, inlined, dropped, refused, removed } = await inlineAssets(
+    page, onProgress, profile
+  );
   // The page's own declaration first; a URL is only ever a fallback, and it has
   // to be trimmed -- NEJM serves `/do/10.1056/NEJMdo008670/full/`, whose path
   // tail is not part of the DOI and turned one into `10.1056/NEJMdo008670/full/`.
@@ -301,6 +323,9 @@ export async function capturePage(tabId, onProgress, profile) {
     // to fetch a figure from somewhere it should not have" are different facts
     // and only one of them is a bug in the profile.
     refused_assets: refused.slice(0, 100),
+    // What the allowlist took out. Recorded so an artifact that lost half its
+    // markup is visible as that, rather than as a publisher who changed layout.
+    sanitized: removed,
   };
 }
 

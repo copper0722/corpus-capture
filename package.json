@@ -1,0 +1,9 @@
+{
+  "name": "corpus-capture-tests",
+  "private": true,
+  "description": "Test-only dependencies. Nothing here ships in the extension, which loads no modules but its own.",
+  "type": "module",
+  "devDependencies": {
+    "linkedom": "^0.18.11"
+  }
+}

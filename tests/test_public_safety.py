@@ -42,7 +42,6 @@ IDENTITY_PATTERNS = [
     (r"copper(?!0722)", "the operator's name outside the public account handle"),
     (r"/data/", "an absolute path from the private host"),
     (r"#1[0-9]{3}(?![0-9a-fA-F])", "a private tracker card number"),
-    (r"[A-Za-z0-9._%+-]+@(?!example\.)[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "an email address"),
     (r"\u738b\u4ecb\u7acb", "the operator's name in Chinese"),
     (r"\b(?:cu5|hm4|hmj|cm1|mbp|mba|boa|boan)\b", "a private host name"),
 ]
@@ -120,6 +119,28 @@ def test_no_source_file_names_the_operator(pattern: str, what: str):
             line = body.count("\n", 0, match.start()) + 1
             hits.append(f"{name}:{line}: {match.group(0)!r}")
     assert not hits, f"{what}: {hits}"
+
+
+def test_no_source_file_carries_an_email_address():
+    """Checked after URLs are removed, because a URL is not a mailbox.
+
+    `https://user:pw@host/` and `https://corpus.example@phishing.example/x` are
+    both test fixtures for the network policy, and both look exactly like an
+    address to a naive pattern. Stripping URLs first keeps the check sharp
+    instead of teaching everyone to add exceptions to it.
+    """
+
+    pattern = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+    hits = []
+    for name in _text_files():
+        if name.startswith(FIXTURE_PREFIX):
+            continue
+        body = (ROOT / name).read_text(encoding="utf-8", errors="ignore")
+        body = re.sub(r"[a-z][a-z0-9+.-]*://\S+", " ", body, flags=re.I)
+        for match in pattern.finditer(body):
+            line = body.count("\n", 0, match.start()) + 1
+            hits.append(f"{name}:{line}: {match.group(0)!r}")
+    assert not hits, hits
 
 
 def test_the_extension_ships_no_endpoint_and_no_credential():
