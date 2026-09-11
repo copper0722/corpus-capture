@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "corpus-capture"
-version = "0.1.3"
+version = "0.1.4"
 description = "Publisher capture profiles, structural figure selection, and the intake contract for the corpus-capture browser extension"
 readme = "README.md"
 license = { file = "LICENSE" }

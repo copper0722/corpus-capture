@@ -321,6 +321,38 @@ class TestAriaDescribedBy:
         ).figures[0].caption
         assert caption == "The caption the page prints."
 
+    def test_an_embedded_figure_still_names_its_asset(self):
+        """The stored artifact is what the corpus re-reads.
+
+        Without the preserved URL a figure in an embedded capture reports
+        asset_url="" -- so `unnumbered_asset_patterns` cannot fire and the
+        Elsevier graphical abstract goes back to claiming "Figure 10".
+        """
+
+        markup = ELSEVIER_GRAPHICAL_ABSTRACT.replace(
+            'src="https://ars.els-cdn.com/content/image/1-s2.0-S0140673626016399-fx1.jpg"',
+            'src="data:image/jpeg;base64,AAAA"'
+            ' data-capture-src="https://ars.els-cdn.com/content/image/'
+            '1-s2.0-S0140673626016399-fx1.jpg"',
+        )
+        figures = build_figure_manifest(
+            markup, profile=profile_for_url(ELSEVIER_URL), base_url=ELSEVIER_URL
+        ).figures
+        assert figures[0].asset_url.endswith("-fx1.jpg")
+        assert figures[0].label == "Figure"
+
+    def test_an_embedded_figure_with_nothing_preserved_says_so(self):
+        """No URL is reported as no URL, never as the data: URI."""
+
+        markup = ELSEVIER_GRAPHICAL_ABSTRACT.replace(
+            'src="https://ars.els-cdn.com/content/image/1-s2.0-S0140673626016399-fx1.jpg"',
+            'src="data:image/jpeg;base64,AAAA"',
+        )
+        figures = build_figure_manifest(
+            markup, profile=profile_for_url(ELSEVIER_URL), base_url=ELSEVIER_URL
+        ).figures
+        assert figures[0].asset_url == ""
+
     def test_a_dangling_aria_reference_is_not_an_error(self):
         markup = ELSEVIER_GRAPHICAL_ABSTRACT.replace('id="alt11"', 'id="somewhere-else"')
         figures = build_figure_manifest(

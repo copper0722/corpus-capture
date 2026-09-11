@@ -232,12 +232,20 @@ def _text(node) -> str:
     return re.sub(r"\s+", " ", node.get_text(" ", strip=True)) if node else ""
 
 
+#: Where an embedder parks the URL it just replaced with a data: URI.
+ORIGINAL_SRC_ATTR = "data-capture-src"
+
+
 def _asset_url(img, base_url: str) -> str:
     raw = (img.get("src") or img.get("data-src") or "").strip()
+    if raw.startswith("data:"):
+        # An embedded figure has no remote URL left in `src`, and a manifest
+        # built from the stored artifact therefore could not say which asset a
+        # figure came from -- which is the manifest's whole job, and what makes
+        # a rule like `unnumbered_asset_patterns` unable to fire downstream.
+        # An embedder that preserves the URL it replaced puts it here.
+        raw = (img.get(ORIGINAL_SRC_ATTR) or "").strip()
     if not raw or raw.startswith("data:"):
-        # An already-embedded figure has no remote URL left to record. The
-        # manifest must be built from the page BEFORE embedding rewrites src,
-        # which is why the capture script builds it first.
         return ""
     return urljoin(base_url, raw) if base_url else raw
 

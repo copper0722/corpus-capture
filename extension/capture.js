@@ -326,6 +326,11 @@ export async function inlineAssets(page, onProgress, profile) {
         node.textContent = sanitizeCss(new TextDecoder().decode(fetched.bytes), asset.url);
       } else {
         const type = fetched.type && fetched.type.startsWith("image/") ? fetched.type : "image/jpeg";
+        // Park the URL before replacing it. The stored artifact is what the
+        // corpus later re-reads, and without this a figure in it cannot say
+        // which asset it came from -- see ORIGINAL_SRC_ATTR in figure_manifest.
+        const original = node.getAttribute("src");
+        if (original && !original.startsWith("data:")) node.setAttribute("data-capture-src", asset.url || original);
         node.setAttribute("src", `data:${type};base64,${bytesToBase64(fetched.bytes)}`);
       }
     }

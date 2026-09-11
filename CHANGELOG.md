@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.4 — 2026-09-11
+
+### Fixed
+
+- An embedded capture could not say which asset a figure came from. Once `src`
+  is a data: URI the remote URL is gone, so a manifest built from the STORED
+  artifact reported `asset_url=""` — which is the manifest's whole job, and it
+  left `unnumbered_asset_patterns` unable to fire anywhere downstream of the
+  capture: the corpus re-read the bundle and went straight back to calling the
+  Elsevier graphical abstract "Figure 10". An embedder now parks the URL it
+  replaces on `data-capture-src` (`ORIGINAL_SRC_ATTR`), the extension included,
+  and `_asset_url` reads it when `src` has been embedded. Nothing preserved is
+  still reported as no URL, never as the data: URI.
+
 ## v0.1.3 — 2026-09-11
 
 ### Fixed
