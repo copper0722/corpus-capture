@@ -17,6 +17,7 @@ from corpus_capture.figure_manifest import (
     figure_label,
     find_article_container,
     is_decorative_asset,
+    is_unnumbered_asset,
     parse_markup,
 )
 from corpus_capture.profiles import fixture_path, load_registry, profile_for_url
@@ -215,6 +216,118 @@ class TestArticleContainer:
         soup = parse_markup("<html><body><div>%s</div></body></html>" % ("word " * 200))
         _unused, selector = find_article_container(soup, ["#nothing-here"])
         assert selector == ""
+
+
+ELSEVIER_URL = "https://www.sciencedirect.com/science/article/pii/S0140673626016399"
+#: The shape that produced the defect, reduced to what matters: an id whose
+#: number is an internal counter, an `-fx` asset, an empty alt, no caption
+#: element at all, and the description behind `aria-describedby`.
+ELSEVIER_GRAPHICAL_ABSTRACT = """
+<html><body><div id="body"><p>Prose.</p>
+<figure class="figure" id="f10">
+  <span><img src="https://ars.els-cdn.com/content/image/1-s2.0-S0140673626016399-fx1.jpg"
+             alt="" aria-describedby="alt11"></span>
+  <div id="alt11" class="figure-description u-display-none">Lipoprotein A particle,
+  illustration. Lipoprotein(a) is a low-density lipoprotein.</div>
+</figure></div></body></html>
+"""
+#: The over-correction control: a NUMBERED Elsevier figure, served as `-gr2`,
+#: on the same profile. Its number must survive.
+ELSEVIER_NUMBERED_FIGURE = """
+<html><body><div id="body"><p>Prose.</p>
+<figure class="figure" id="f2">
+  <span><img src="https://ars.els-cdn.com/content/image/1-s2.0-S0140673626016399-gr2.jpg"
+             alt="" aria-describedby="alt3"></span>
+  <div id="alt3">Kaplan-Meier curves for the primary endpoint.</div>
+</figure></div></body></html>
+"""
+
+
+class TestUnnumberedDisplayItem:
+    """A number nobody can see is worse than no number: a reader cites it.
+
+    Measured 2026-09-11 on two Lancet Comments captured through ScienceDirect.
+    Each has exactly ONE image -- the graphical abstract -- in
+    `<figure id="f10">` with the asset `...-fx1.jpg`, and the manifest called it
+    "Figure 10". The page prints no number anywhere.
+    """
+
+    def _figures(self, markup: str):
+        return build_figure_manifest(
+            markup,
+            profile=profile_for_url(ELSEVIER_URL),
+            base_url=ELSEVIER_URL,
+        ).figures
+
+    def test_the_unnumbered_item_keeps_the_word_and_drops_the_number(self):
+        figures = self._figures(ELSEVIER_GRAPHICAL_ABSTRACT)
+        assert [f.label for f in figures] == ["Figure"]
+        # Still a full record, not dropped: an empty label would remove it.
+        assert figures[0].figure_id == "f10"
+        assert figures[0].asset_url.endswith("-fx1.jpg")
+
+    def test_a_numbered_figure_on_the_same_profile_keeps_its_number(self):
+        """The over-correction control."""
+
+        assert [f.label for f in self._figures(ELSEVIER_NUMBERED_FIGURE)] == ["Figure 2"]
+
+    def test_the_pattern_is_profile_data_not_a_rule_in_the_code(self):
+        assert profile_for_url(ELSEVIER_URL)["unnumbered_asset_patterns"] == ["-fx"]
+        # Another publisher's profile does not inherit Elsevier's convention.
+        assert profile_for_url(NEJM_URL)["unnumbered_asset_patterns"] == []
+
+    @pytest.mark.parametrize(
+        ("url", "patterns", "expected"),
+        [
+            ("https://x/1-s2.0-S1-fx1.jpg", ("-fx",), True),
+            ("https://x/1-s2.0-S1-fx1_lrg.jpg", ("-fx",), True),
+            ("https://x/1-s2.0-S1-gr1.jpg", ("-fx",), False),
+            ("https://x/1-s2.0-S1-fx1.jpg", (), False),
+            ("", ("-fx",), False),
+        ],
+    )
+    def test_the_path_test(self, url, patterns, expected):
+        assert is_unnumbered_asset(url, patterns=patterns) is expected
+
+    def test_numbered_false_never_empties_a_label(self):
+        """An empty label drops the figure; the word alone must come back."""
+
+        assert figure_label(element_id="f10", numbered=False) == "Figure"
+        assert figure_label(element_id="t3", numbered=False) == "Table"
+        assert figure_label(element_id="footer", numbered=False) == ""
+
+
+class TestAriaDescribedBy:
+    """The description a screen reader is given is the caption a reader wants.
+
+    ScienceDirect hides it in a `u-display-none` div outside every caption
+    selector, so a figure that HAS a description was recorded with none.
+    """
+
+    def test_the_description_becomes_the_caption(self):
+        figures = build_figure_manifest(
+            ELSEVIER_GRAPHICAL_ABSTRACT,
+            profile=profile_for_url(ELSEVIER_URL),
+            base_url=ELSEVIER_URL,
+        ).figures
+        assert "Lipoprotein A particle" in figures[0].caption
+
+    def test_a_real_caption_wins_over_the_aria_target(self):
+        markup = ELSEVIER_GRAPHICAL_ABSTRACT.replace(
+            "</figure>", "<figcaption>The caption the page prints.</figcaption></figure>"
+        )
+        caption = build_figure_manifest(
+            markup, profile=profile_for_url(ELSEVIER_URL), base_url=ELSEVIER_URL
+        ).figures[0].caption
+        assert caption == "The caption the page prints."
+
+    def test_a_dangling_aria_reference_is_not_an_error(self):
+        markup = ELSEVIER_GRAPHICAL_ABSTRACT.replace('id="alt11"', 'id="somewhere-else"')
+        figures = build_figure_manifest(
+            markup, profile=profile_for_url(ELSEVIER_URL), base_url=ELSEVIER_URL
+        ).figures
+        assert len(figures) == 1
+        assert figures[0].caption == ""
 
 
 def test_every_supported_profile_has_the_fixture_it_claims():

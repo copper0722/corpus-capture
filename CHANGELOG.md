@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.1.3 — 2026-09-11
+
+### Fixed
+
+- A single unnumbered display item was reported as "Figure 10". Measured on two
+  Lancet Comments captured through ScienceDirect: each has exactly ONE image,
+  the graphical abstract, in `<figure id="f10">` with the asset `...-fx1.jpg`,
+  and the page prints no number anywhere. The element id is an internal counter,
+  not a figure number, and a number nobody can see is worse than no number
+  because a reader cites it. Profiles may now declare
+  `unnumbered_asset_patterns` — Elsevier's `-fx`, against its numbered `-gr` —
+  and a match keeps the figure with the bare word ("Figure") instead of the
+  counter's digits. This is publisher knowledge and therefore registry data;
+  `figure_label(..., numbered=False)` never returns "", because an empty label
+  drops the figure from the manifest and the figure is real.
+
+- A figure's description was lost when the page attaches it with
+  `aria-describedby` instead of a caption element. ScienceDirect hides it in a
+  `u-display-none` div outside every caption selector, so a figure that HAS a
+  description was recorded with none. The caption now falls back to the text the
+  ARIA reference points at, looked up from the document because the target
+  commonly sits outside the referring element. A real caption still wins, and a
+  dangling reference is the page's bug, not a capture failure.
+
 ## v0.1.2 — 2026-09-03
 
 ### Fixed

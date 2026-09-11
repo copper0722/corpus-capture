@@ -43,7 +43,8 @@ Unparseable markup raises; a caller that cannot parse a page has not captured it
 
 Public entrypoints
 ------------------
-``build_figure_manifest()``, ``figure_label()``, ``is_decorative_asset()``.
+``build_figure_manifest()``, ``figure_label()``, ``is_decorative_asset()``,
+``is_unnumbered_asset()``.
 
 Related tests
 -------------
@@ -136,19 +137,31 @@ def parse_markup(markup: str):
         return BeautifulSoup(markup, "html.parser")
 
 
-def figure_label(*, element_id: str = "", alt: str = "", caption: str = "") -> str:
+def figure_label(
+    *, element_id: str = "", alt: str = "", caption: str = "", numbered: bool = True
+) -> str:
     """The label a reader would call this figure, or "".
 
     Three sources, weakest last. The element id is the publisher's own key and is
     stable across renders; alt is what the page tells assistive technology; the
     caption's opening words are a last resort because a caption may begin with
     prose that merely mentions a figure.
+
+    ``numbered=False`` says the caller knows this display item carries no number,
+    so the id's digits are an internal counter rather than a figure number. Then
+    the id may still establish that this IS a figure and may not say which one.
+    Measured 2026-09-11 on two Lancet Comments: the graphical abstract sits in
+    ``<figure id="f10">`` with the asset ``...-fx1.jpg``, the page prints no
+    number anywhere, and the manifest called a single unnumbered image
+    "Figure 10". A number nobody can see is worse than no number, because a
+    reader cites it. The word alone is still returned, never "" -- an empty
+    label drops the figure from the manifest entirely, and the figure is real.
     """
 
     match = _ID_LABEL_RE.match((element_id or "").strip())
     if match:
         kind = _KIND_WORDS.get(match.group("kind").lower(), "Figure")
-        return f"{kind} {int(match.group('number'))}"
+        return kind if not numbered else f"{kind} {int(match.group('number'))}"
     for text in (alt, caption):
         found = _LABEL_RE.match((text or "").strip())
         if found:
@@ -157,6 +170,49 @@ def figure_label(*, element_id: str = "", alt: str = "", caption: str = "") -> s
             number = (found.group(2) or "").strip()
             return f"{word} {number}".strip() if number else word
     return ""
+
+
+def is_unnumbered_asset(url: str, *, patterns: tuple[str, ...] = ()) -> bool:
+    """True for an asset whose PATH says the publisher did not number it.
+
+    Elsevier serves numbered figures as ``-gr1.jpg`` and unnumbered display
+    items -- the graphical abstract, an inline illustration -- as ``-fx1.jpg``.
+    The element id counts both, so the id alone cannot tell them apart. This is
+    publisher knowledge and therefore profile data, not a rule in this function.
+
+    Unlike :func:`is_decorative_asset` this never demotes a figure: the item
+    stays in the manifest with a full record, it simply stops claiming a number
+    the page never printed.
+    """
+
+    lowered = (url or "").lower()
+    return any(pattern.lower() in lowered for pattern in patterns if pattern)
+
+
+def _described_by(node, img) -> str:
+    """The text an `aria-describedby` points at, joined in id order.
+
+    Looked up from the document, because the target commonly sits OUTSIDE the
+    element that references it. Ids that resolve to nothing are skipped in
+    silence: a dangling aria reference is the page's bug, not a capture failure.
+    """
+
+    root = getattr(node, "parent", None) or node
+    while getattr(root, "parent", None) is not None:
+        root = root.parent
+    parts: list[str] = []
+    for holder in (img, node):
+        if holder is None:
+            continue
+        for target_id in str(holder.get("aria-describedby") or "").split():
+            try:
+                target = root.find(id=target_id)
+            except Exception:
+                target = None
+            text = _text(target)
+            if text and text not in parts:
+                parts.append(text)
+    return " ".join(parts)
 
 
 def is_decorative_asset(url: str, *, patterns: tuple[str, ...] = ()) -> bool:
@@ -241,6 +297,7 @@ def build_figure_manifest(
     figure_selectors = tuple(profile.get("figure_selectors") or ("figure",))
     caption_selectors = tuple(profile.get("caption_selectors") or ("figcaption",))
     decorative_patterns = tuple(profile.get("decorative_asset_patterns") or ())
+    unnumbered_patterns = tuple(profile.get("unnumbered_asset_patterns") or ())
     drop_patterns = tuple(profile.get("drop_asset_patterns") or ())
     drop_hosts = tuple(profile.get("drop_asset_hosts") or ())
 
@@ -272,12 +329,26 @@ def build_figure_manifest(
                 if text and text not in parts:
                     parts.append(text)
         caption = " ".join(parts)[:MAX_CAPTION_CHARS]
+        if not caption:
+            # The page's own description, reached the way a screen reader reaches
+            # it. ScienceDirect puts the figure's description in a hidden
+            # `<div id="alt11" class="figure-description u-display-none">` and
+            # points at it with `aria-describedby`, so every caption selector
+            # finds nothing and a figure that HAS a description is recorded with
+            # none. This is the ARIA contract for exactly this text, not a
+            # publisher quirk, so it belongs here rather than in a profile.
+            caption = _described_by(node, img)[:MAX_CAPTION_CHARS]
         alt = (img.get("alt") or "").strip()
         element_id = (node.get("id") or img.get("id") or "").strip()
-        label = figure_label(element_id=element_id, alt=alt, caption=caption)
+        url = _asset_url(img, base_url)
+        label = figure_label(
+            element_id=element_id,
+            alt=alt,
+            caption=caption,
+            numbered=not is_unnumbered_asset(url, patterns=unnumbered_patterns),
+        )
         if not label:
             return
-        url = _asset_url(img, base_url)
         payload = (asset_bytes or {}).get(url)
         claimed.add(id(img))
         candidates.append((

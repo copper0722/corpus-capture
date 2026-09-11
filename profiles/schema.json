@@ -101,6 +101,10 @@
         "decorative_asset_patterns": {
           "$ref": "#/$defs/selectorList"
         },
+        "unnumbered_asset_patterns": {
+          "description": "Asset path fragments the publisher uses for display items it does NOT number -- Elsevier's '-fx' graphical abstract, against its numbered '-gr'. A match keeps the figure but stops the element id's internal counter being reported as a figure number.",
+          "$ref": "#/$defs/selectorList"
+        },
         "status": {
           "description": "supported = a committed fixture exists and a test asserts container, identity and the figure manifest against it. generic = only the fallback selectors are proven. unsupported = something was measured and it did not work.",
           "enum": [
@@ -188,6 +192,10 @@
           "$ref": "#/$defs/selectorList"
         },
         "decorative_asset_patterns": {
+          "$ref": "#/$defs/selectorList"
+        },
+        "unnumbered_asset_patterns": {
+          "description": "Asset path fragments the publisher uses for display items it does NOT number -- Elsevier's '-fx' graphical abstract, against its numbered '-gr'. A match keeps the figure but stops the element id's internal counter being reported as a figure number.",
           "$ref": "#/$defs/selectorList"
         },
         "status": {

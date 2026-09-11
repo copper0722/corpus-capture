@@ -86,7 +86,8 @@
       "avatar",
       "/cover"
     ],
-    "asset_origins": []
+    "asset_origins": [],
+    "unnumbered_asset_patterns": []
   },
   "profiles": [
     {
@@ -523,6 +524,9 @@
         "ars.els-cdn.com",
         "*.sciencedirectassets.com",
         "*.els-cdn.com"
+      ],
+      "unnumbered_asset_patterns": [
+        "-fx"
       ]
     },
     {

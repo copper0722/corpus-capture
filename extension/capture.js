@@ -96,7 +96,8 @@ export function profileForUrl(registry, url) {
       const merged = { ...generic, ...profile, matched: true };
       for (const key of ["article_container_selectors", "figure_selectors",
                          "caption_selectors", "access_markers", "drop_selectors",
-                         "decorative_asset_patterns", "asset_origins"]) {
+                         "decorative_asset_patterns", "unnumbered_asset_patterns",
+                         "asset_origins"]) {
         if (!profile[key]) merged[key] = generic[key] || [];
       }
       return merged;
