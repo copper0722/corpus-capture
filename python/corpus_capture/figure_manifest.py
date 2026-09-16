@@ -237,7 +237,8 @@ ORIGINAL_SRC_ATTR = "data-capture-src"
 
 
 def _asset_url(img, base_url: str) -> str:
-    raw = (img.get("src") or img.get("data-src") or "").strip()
+    raw = (img.get(ORIGINAL_SRC_ATTR) or img.get("data-original")
+           or img.get("data-src") or img.get("src") or "").strip()
     if raw.startswith("data:"):
         # An embedded figure has no remote URL left in `src`, and a manifest
         # built from the stored artifact therefore could not say which asset a
@@ -405,6 +406,7 @@ def build_figure_manifest(
         for position, item in enumerate(sorted(best.values(), key=lambda item: item[1]))
     ]
 
+    article_image_ids = {id(image) for image in container.find_all("img")}
     decorative: list[dict[str, Any]] = []
     for image in soup.find_all("img"):
         if id(image) in claimed:
@@ -416,7 +418,7 @@ def build_figure_manifest(
             else "blocked_asset_path" if is_decorative_asset(url, patterns=drop_patterns)
             else "known_furniture" if is_decorative_asset(url, patterns=decorative_patterns)
             else "outside_article_container"
-            if container is not soup and image not in container.find_all("img")
+            if container is not soup and id(image) not in article_image_ids
             else "unlabelled"
         )
         decorative.append({

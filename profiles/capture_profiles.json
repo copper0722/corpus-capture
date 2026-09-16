@@ -204,20 +204,21 @@
         "*.jamanetwork.com"
       ],
       "article_container_selectors": [
-        "#bodyContent",
-        ".article-full-text",
-        "article",
-        "main"
+        ".article-body",
+        ".widget-instance-AMA_ArticleFulltext_New .article-full-text"
       ],
       "figure_selectors": [
+        ".figure-table-wrapper",
         "figure",
         ".figure",
-        ".figure-table",
         ".article-figure"
       ],
       "caption_selectors": [
+        ".figure-label",
+        ".table-label",
         "figcaption",
         ".figure-caption",
+        ".table-caption",
         ".caption"
       ],
       "meta_sources": [
@@ -238,8 +239,8 @@
         ".article-access-options"
       ],
       "status": "generic",
-      "fixture": null,
-      "notes": "2026-09-03: captured 10.1001/jamasurg.2023.6699 through the clinical browser. Container `.article-full-text` resolved; the article itself carries no figure element, so no figure assertion was possible and the profile stays generic until an article with figures is captured.",
+      "fixture": "fixtures/capture-profiles/jama.html",
+      "notes": "Synthetic multi-widget fixture proves body, references and three figures plus two tables. Keep generic pending integrated live capture and complete-asset readback. Never select the first article-full-text widget: it can be the abstract.",
       "asset_origins": [
         "cdn.jamanetwork.com",
         "*.jamanetwork.com"
