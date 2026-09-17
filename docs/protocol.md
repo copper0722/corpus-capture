@@ -212,6 +212,29 @@ which it does not, instead of looking complete because nothing says otherwise.
 the honest answer while an ingestion schedule has not fired. It deliberately is
 not "pending" or "processing", which would suggest a worker already holds it.
 
+## `GET /api/v1/capture/identity?doi=`
+
+What the side panel previews before anything is captured: the record the
+receiver resolved for a DOI and whether it already holds the work. The panel
+reads the page's own declarations itself (only `<meta>` and the address), shows
+them at once, and merges this answer in when it arrives.
+
+```json
+{
+  "doi": "10.1056/nejmp2607831",
+  "metadata": { "title": "…", "authors": ["…"], "journal": "…", "published": "2026-09-10",
+                "volume": "395", "issue": "11", "pages": "1001-1003", "issn": "…",
+                "publisher": "…" },
+  "metadata_source": "registry",
+  "metadata_status": "resolved | unresolved | in_progress | unavailable | error",
+  "known": { "title": "…", "reader_url": "https://…" }
+}
+```
+
+A receiver without it answers 404, and the preview shows the page alone. When
+the reader saves, the previewed (and corrected) values travel as
+`reader_review` with finalize.
+
 ## `GET /api/v1/intake/{receipt_id}/identity`
 
 What the reader reviews before finalize. `?doi=` looks up a DOI the reader

@@ -17,23 +17,11 @@
     <h2 id="page-heading">目前分頁</h2>
     <p id="page-title" class="title">—</p>
     <p id="profile" class="badge generic">讀取設定檔…</p>
-    <button id="capture" type="button">存入 corpus</button>
-    <p class="hint">快捷鍵 Alt+Shift+S（Mac：Control+Shift+S）。擷取中請保持側欄開啟。</p>
-  </section>
-
-  <section id="run" aria-labelledby="run-heading" hidden>
-    <h2 id="run-heading">擷取進度</h2>
-    <p id="run-title" class="title"></p>
-    <p id="status" role="status" aria-live="polite"></p>
-    <ol id="rows"></ol>
-    <p id="result"></p>
   </section>
 
   <form id="review" hidden>
-    <h2>確認文獻身分</h2>
-    <p id="review-title" class="title"></p>
     <fieldset id="doi-step">
-      <legend>1. 辨識出的 DOI</legend>
+      <legend>DOI</legend>
       <div class="field">
         <label for="doi">DOI</label>
         <span id="doi-hint" class="hint"></span>
@@ -49,20 +37,24 @@
       </div>
     </fieldset>
     <fieldset id="meta-step">
-      <legend>2. 書目資料</legend>
-      <p id="meta-status" role="status" aria-live="polite">查詢中…</p>
+      <legend>書目資料</legend>
+      <p id="meta-status" role="status" aria-live="polite">讀取頁面中…</p>
       <p id="known" class="note" hidden></p>
       <div id="fields"></div>
     </fieldset>
-    <p id="review-hint" class="hint">附件仍在上傳時也可以先確認；兩者都完成後才會入庫。</p>
     <div class="row">
-      <button id="confirm" type="submit">確認並入庫</button>
+      <button id="save" type="submit">儲存並建立 bundle</button>
     </div>
+    <p class="hint">快捷鍵 Alt+Shift+S（Mac：Control+Shift+S）直接以目前預覽儲存。儲存中請保持側欄開啟。</p>
   </form>
+  <p id="page-note" class="hint" hidden></p>
 
-  <section id="pending" aria-labelledby="pending-heading" hidden>
-    <h2 id="pending-heading">待確認</h2>
-    <ul id="pending-list"></ul>
+  <section id="run" aria-labelledby="run-heading" hidden>
+    <h2 id="run-heading">儲存進度</h2>
+    <p id="run-title" class="title"></p>
+    <p id="status" role="status" aria-live="polite"></p>
+    <ol id="rows"></ol>
+    <p id="result"></p>
   </section>
 
   <section aria-labelledby="receipts-heading">

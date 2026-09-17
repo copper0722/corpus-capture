@@ -5,6 +5,7 @@ import { assetDecision, hostMatches, sameOrigin } from "./net-policy.js";
 import { sanitizeCss, sanitizeDocument, serializeDocument } from "./sanitize.js";
 import { serializePage } from "./serialize.js";
 import { allCaptured, attachmentPayloadName, manifestRows } from "./attachments.js";
+import { DECLARATION_KEYS, probePageIdentity } from "./identity-probe.js";
 
 // No default endpoint ships with the extension. The receiver is a corpus you
 // run; its address is yours, it is often on a private network, and baking one
@@ -159,6 +160,21 @@ export function doiFromUrl(url) {
     candidate = trimmed;
   }
   return candidate.replace(/\/+$/, "") || null;
+}
+
+/**
+ * The page's DOI and where it came from: its own declaration first; a URL is
+ * only ever a fallback. `doi_source` is for the reader who has to judge it and
+ * stays in the extension (the submission schema is closed).
+ */
+export function identityFromDeclarations(declaredDoi, canonicalUrl, pageUrl) {
+  const declared = normalizeDoi(declaredDoi);
+  if (declared) return { doi: declared, doi_source: "page_meta" };
+  const fromCanonical = doiFromUrl(canonicalUrl);
+  if (fromCanonical) return { doi: fromCanonical, doi_source: "canonical_url" };
+  const fromUrl = doiFromUrl(pageUrl);
+  if (fromUrl) return { doi: fromUrl, doi_source: "url" };
+  return { doi: null, doi_source: "none" };
 }
 
 export function captureSlug(doi, url) {
@@ -370,13 +386,9 @@ export async function capturePage(tabId, onProgress, profile) {
   // The page's own declaration first; a URL is only ever a fallback, and it has
   // to be trimmed -- NEJM serves `/do/10.1056/NEJMdo008670/full/`, whose path
   // tail is not part of the DOI and turned one into `10.1056/NEJMdo008670/full/`.
-  const declared = normalizeDoi(page.meta.doi);
-  const fromCanonical = declared ? null : doiFromUrl(page.canonical_url);
-  const fromUrl = declared || fromCanonical ? null : doiFromUrl(page.url);
-  const doi = declared || fromCanonical || fromUrl;
-  // Where the DOI came from, for the reader who has to judge it. Local to the
-  // extension: the submission schema is closed and does not carry it.
-  const doiSource = declared ? "page_meta" : fromCanonical ? "canonical_url" : fromUrl ? "url" : "none";
+  const { doi, doi_source: doiSource } = identityFromDeclarations(
+    page.meta.doi, page.canonical_url, page.url
+  );
   const payloadBytes = new TextEncoder().encode(html).length;
   // The receiver refuses this too, but refusing it here means the bytes are
   // never sent and the reader is told why rather than reading `http_413`.
@@ -484,19 +496,34 @@ export async function readReceipt(receiptId) {
 }
 
 /**
- * What the receiver makes of a held capture's identity: the DOI it read from
- * the page (or `doi`, when the reader typed another one), the bibliographic
- * record it resolved, and whether it already holds the work.
- *
- * `null` when the receiver does not offer the endpoint (404/405): the review
- * then shows the page's own declarations only. Any other failure throws.
+ * What the open page declares about itself, for the side panel's preview.
+ * Reads only the page's <meta> and address; nothing is captured or sent.
  */
-export async function readIdentity(receiptId, doi = null) {
+export async function probeTab(tabId) {
+  const [injected] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: probePageIdentity,
+    args: [DECLARATION_KEYS, LIMITS],
+  });
+  const page = injected && injected.result;
+  if (!page || typeof page !== "object") throw new Error("page_not_readable");
+  return {
+    ...page,
+    url: page.canonical_url || page.url,
+    final_url: page.url,
+    ...identityFromDeclarations(page.doi, page.canonical_url, page.url),
+  };
+}
+
+/**
+ * What the receiver knows about a DOI: the bibliographic record it resolved
+ * and whether it already holds the work. `null` when the receiver does not
+ * offer the lookup (404/405); the preview then shows the page alone.
+ */
+export async function lookupIdentity(doi) {
   const { apiBase, serviceToken } = await settings();
-  const query = doi ? `?doi=${encodeURIComponent(doi)}` : "";
   const response = await apiFetch(
-    `/api/v1/intake/${encodeURIComponent(receiptId)}/identity${query}`,
-    { apiBase, serviceToken }
+    `/api/v1/capture/identity?doi=${encodeURIComponent(doi)}`, { apiBase, serviceToken }
   );
   if (response.status === 404 || response.status === 405) return null;
   let payload = null;

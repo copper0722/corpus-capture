@@ -55,24 +55,17 @@ many figures, what they are called, how many images were classified as
 decoration), the receipt id, and finally a link to read what was admitted. The
 service worker keeps polling after the capture is sent.
 
-### Review the identity before it is saved (extension 1.3.0)
+### Preview first, then save (extension 1.3.0)
 
-Unless you turn it off in the options, every capture is held at the receiver
-until you have looked at its identity. The panel first shows the DOI it found
-and where it found it (the page's `citation_doi`, its canonical URL, or its
-address), then the bibliographic record: the page's own declarations at once,
-and the receiver's resolved record as soon as it answers. Where the two
-disagree, the page's value is listed under the field with a button to use it
-instead. Correct any field, or type another DOI and look it up again, then
-press "確認並入庫". Attachments keep uploading while you review; the capture is
-published when both are done.
-
-The review travels to the receiver as an observation (`reader_review`), never
-as an identity: the receiver decides, and keeps the page's declarations beside
-it. Closing the panel while attachments are uploading publishes what arrived;
-closing it when only the review is left keeps the capture held, and the panel's
-"待確認" list resumes it (the receiver publishes an unreviewed hold on its own
-after an hour).
+Opening the panel, or switching tabs, previews the page: the DOI it declares and
+where it came from, then the bibliographic record -- the page's own
+declarations at once, the receiver's resolved record as soon as
+`GET /api/v1/capture/identity` answers, with the page's value listed under any
+field where the two disagree. Correct any field, or type another DOI and look it
+up again, then press "儲存並建立 bundle": the page and its attachments are
+captured, and the previewed values travel to the receiver as `reader_review`,
+an observation the receiver weighs while keeping the page's declarations. The
+keyboard command saves what the preview shows.
 
 ## Figures are chosen by structure, not by size
 

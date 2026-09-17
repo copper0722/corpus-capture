@@ -204,7 +204,8 @@ def _node() -> str | None:
 @pytest.mark.skipif(_node() is None, reason="node is not installed on this host")
 @pytest.mark.parametrize("module", ["serialize.js", "capture.js", "sidepanel.js",
                                     "options.js", "service-worker.js", "attachments.js",
-                                    "runner.js", "progress.js", "launch.js", "review.js"])
+                                    "runner.js", "progress.js", "launch.js", "review.js",
+                                    "identity-probe.js"])
 def test_every_module_parses(module: str):
     """A syntax error here is an extension that never loads and never says why.
 
@@ -265,7 +266,9 @@ def test_a_capture_runs_in_the_side_panel_not_in_a_popup():
     assert "setPanelBehavior({ openPanelOnActionClick: true })" in worker
     assert "openPanelOnActionIconClick" not in worker
     panel = _read("sidepanel.js")
-    assert "runCapture" in panel and "review: reviewing ? reviewStep : null" in panel
+    # Preview first: the open page's identity is read and looked up before saving.
+    assert "runCapture" in panel and "probeTab(tab.id)" in panel and "lookupIdentity(doi)" in panel
+    assert 'id="save" type="submit"' in _read("sidepanel.html")
     assert '<script type="module" src="sidepanel.js">' in _read("sidepanel.html")
     # The progress tab stays as the fallback for a browser without the API.
     assert "runCapture" in _read("progress.js")
@@ -286,14 +289,13 @@ def test_one_key_starts_a_capture():
     assert 'export const CAPTURE_REQUEST_KEY' in _read("launch.js")
 
 
-def test_a_closing_side_panel_closes_only_a_capture_still_uploading():
-    """Uploads die with the panel; a capture waiting only for its review stays held."""
+def test_a_closing_side_panel_publishes_an_upload_with_its_review():
+    """Uploads die with the panel; what arrived is published with the reader's review."""
 
     source = _read("sidepanel.js")
     hide = source[source.index('addEventListener("pagehide"'):]
     assert "if (!inFlight || !inFlight.uploading) return;" in hide
-    assert "keepalive: true" in hide
-    assert "PENDING_KEY" in source and "resumeReview" in source
+    assert "keepalive: true" in hide and "review: inFlight.review" in hide
 
 
 def test_a_closing_progress_tab_closes_its_held_capture():

@@ -206,4 +206,64 @@ def test_the_identity_step_is_documented_on_both_sides():
     assert '@app.get("/api/v1/intake/{receipt_id}/identity")' in receiver
     assert 'review=body.get("reader_review")' in receiver
     assert 'sidecar["page_declared"]' in receiver
-    assert "/identity${query}" in (EXTENSION / "capture.js").read_text(encoding="utf-8")
+    assert "## `GET /api/v1/capture/identity?doi=`" in protocol
+    assert "/api/v1/capture/identity?doi=" in (EXTENSION / "capture.js").read_text(encoding="utf-8")
+
+
+PROBE_PAGE = """<!doctype html><html><head><title>Fallback title</title>
+<meta name="citation_doi" content="10.1123/ijsnem.2026-0001">
+<meta name="citation_title" content="UCI Sports Nutrition Project">
+<meta name="citation_author" content="Ada Lovelace">
+<meta name="citation_author" content="Grace Hopper">
+<meta name="citation_journal_title" content="Int J Sport Nutr Exerc Metab">
+<meta name="citation_firstpage" content="1"><meta name="citation_lastpage" content="20">
+<meta property="og:site_name" content="Human Kinetics">
+<link rel="canonical" href="https://journals.example/doi/10.1123/ijsnem.2026-0001">
+</head><body><p>body</p></body></html>"""
+
+
+@needs_node
+def test_the_preview_reads_only_the_page_declarations():
+    if not (ROOT / "node_modules" / "linkedom").is_dir():
+        pytest.skip("linkedom is not installed")
+    probe_js = (EXTENSION / "identity-probe.js").as_posix()
+    limits_js = (EXTENSION / "limits.js").as_posix()
+    script = f"""
+      import {{ parseHTML }} from "linkedom";
+      import {{ DECLARATION_KEYS, probePageIdentity }} from "{probe_js}";
+      import {{ LIMITS }} from "{limits_js}";
+      const {{ document }} = parseHTML({json.dumps(PROBE_PAGE)});
+      globalThis.document = document;
+      globalThis.location = {{ href: "https://journals.example/view/ijsnem-2026-0001" }};
+      console.log(JSON.stringify(probePageIdentity(DECLARATION_KEYS, LIMITS)));
+    """
+    result = subprocess.run(
+        [NODE, "--input-type=module", "--eval", script], capture_output=True, text=True,
+        check=False, cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    page = json.loads(result.stdout.strip().splitlines()[-1])
+    assert page["doi"] == "10.1123/ijsnem.2026-0001"
+    assert page["title"] == "UCI Sports Nutrition Project"
+    assert page["authors"] == ["Ada Lovelace", "Grace Hopper"]
+    assert page["publisher_meta"] == {
+        "title": "UCI Sports Nutrition Project", "journal": "Int J Sport Nutr Exerc Metab",
+        "first_page": "1", "last_page": "20",
+    }
+    assert page["canonical_url"] == "https://journals.example/doi/10.1123/ijsnem.2026-0001"
+
+
+def test_the_preview_uses_the_serializer_s_keys():
+    """The preview must not show an identity the saved capture would not carry."""
+
+    probe = (EXTENSION / "identity-probe.js").read_text(encoding="utf-8")
+    serializer = (EXTENSION / "serialize.js").read_text(encoding="utf-8")
+    import re
+
+    keys = set(re.findall(r'"([a-z_.:]+[A-Za-z]*)"', probe[probe.index("DECLARATION_KEYS"):
+                                                            probe.index("export function")]))
+    keys -= {"publisher_meta", "doi", "title", "date_published", "authors", "journal",
+             "publisher", "publication_date", "volume", "issue", "first_page", "last_page", "issn"}
+    assert keys, "no keys parsed"
+    missing = sorted(key for key in keys if f'"{key}"' not in serializer)
+    assert not missing, missing
