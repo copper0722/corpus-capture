@@ -31,8 +31,8 @@ the receiving end is yours to implement.
 
 1. Open `chrome://extensions` and turn on developer mode.
 2. **Load unpacked**, and choose the `extension/` directory.
-3. Click the icon, then "設定 API 位址與 token", and fill in your receiver's
-   address and service token.
+3. Click the icon to open the side panel, then "設定", and fill in your
+   receiver's address and service token.
 
 **There is no built-in endpoint.** A receiver is something you run, usually on a
 private network. Shipping one address would be useless to everyone else and
@@ -41,7 +41,8 @@ would disclose where one person's archive lives. The address must be `https`
 
 ## What happens when you press the button
 
-The badge at the top of the popup tells you what this site is worth:
+The toolbar icon opens a side panel beside the article; it stays open while you
+read. The badge at the top of the panel tells you what this site is worth:
 
 | badge | meaning |
 |---|---|
@@ -51,8 +52,27 @@ The badge at the top of the popup tells you what this site is worth:
 
 Then the status line moves through embedding progress, the figure manifest (how
 many figures, what they are called, how many images were classified as
-decoration), the receipt id, and finally a link to read what was admitted. You
-can close the popup; the service worker keeps polling.
+decoration), the receipt id, and finally a link to read what was admitted. The
+service worker keeps polling after the capture is sent.
+
+### Review the identity before it is saved (extension 1.3.0)
+
+Unless you turn it off in the options, every capture is held at the receiver
+until you have looked at its identity. The panel first shows the DOI it found
+and where it found it (the page's `citation_doi`, its canonical URL, or its
+address), then the bibliographic record: the page's own declarations at once,
+and the receiver's resolved record as soon as it answers. Where the two
+disagree, the page's value is listed under the field with a button to use it
+instead. Correct any field, or type another DOI and look it up again, then
+press "確認並入庫". Attachments keep uploading while you review; the capture is
+published when both are done.
+
+The review travels to the receiver as an observation (`reader_review`), never
+as an identity: the receiver decides, and keeps the page's declarations beside
+it. Closing the panel while attachments are uploading publishes what arrived;
+closing it when only the review is left keeps the capture held, and the panel's
+"待確認" list resumes it (the receiver publishes an unreviewed hold on its own
+after an hour).
 
 ## Figures are chosen by structure, not by size
 
@@ -93,7 +113,7 @@ page controls. So the fetch is a decision, not a loop:
 | plaintext `http`, even same-origin | no | — |
 | anything that answers a redirect | no | — |
 
-A refused asset is counted and shown in the popup rather than dropped quietly.
+A refused asset is counted and shown in the receipt rather than dropped quietly.
 If a publisher serves figures from a CDN this does not know about, the fix is a
 line in `profiles/capture_profiles.json`, not a wider permission.
 

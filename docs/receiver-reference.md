@@ -81,6 +81,7 @@ from corpus_capture import (
     SubmissionError,
     attachment_payload_name,
     enforce_body_size,
+    normalize_doi,
     public_registry,
     validate_attachment_meta,
     validate_finalize,
@@ -310,8 +311,21 @@ async def intake_attachment(
     }}
 
 
+def _apply_review(sidecar: dict[str, Any], review: dict[str, Any]) -> None:
+    # The reader's review is evidence, and filing under it is THIS receiver's
+    # decision. The page's own declarations stay beside it, unchanged.
+    sidecar["page_declared"] = {key: sidecar.get(key) for key in ("doi", "title", "date_published", "authors")}
+    sidecar["reader_review"] = review
+    sidecar["doi"] = review["doi"]
+    meta = review["metadata"]
+    for key, field in (("title", "title"), ("date_published", "published"), ("authors", "authors")):
+        if meta[field] or field in review["changed"]:
+            sidecar[key] = meta[field] or None
+
+
 def _publish_held(receipt_id: str, record: dict[str, Any], declared: list[dict[str, Any]],
-                  *, complete: bool, discovered: int, reason: str | None = None) -> dict[str, Any]:
+                  *, complete: bool, discovered: int, reason: str | None = None,
+                  review: dict[str, Any] | None = None) -> dict[str, Any]:
     # The receiver's own ledger decides what was captured. A row the producer
     # calls captured that never arrived is a gap, recorded as one.
     stored = {row["index"]: row for row in record["attachments"]}
@@ -342,11 +356,14 @@ def _publish_held(receipt_id: str, record: dict[str, Any], declared: list[dict[s
     sidecar["attachments_complete"] = complete and all(row["status"] == "captured" for row in manifest)
     if reason:
         sidecar["attachments_finalized_by"] = reason
+    if review is not None:
+        _apply_review(sidecar, review)
     (staging / f"{record['stem']}.json").write_text(json.dumps(sidecar, indent=1), encoding="utf-8")
     os.replace(staging, INBOX / record["handoff_id"])
-    RECEIPTS.update(receipt_id, state="received", staging=None)
+    doi = sidecar.get("doi")
+    RECEIPTS.update(receipt_id, state="received", staging=None, doi=doi)
     return {"receipt_id": receipt_id, "state": "received",
-            "payload_sha256": record["payload_sha256"], "doi": record.get("doi")}
+            "payload_sha256": record["payload_sha256"], "doi": doi}
 
 
 @app.post("/api/v1/intake/{receipt_id}/finalize", status_code=202)
@@ -363,7 +380,39 @@ async def intake_finalize(
     except (SubmissionError, ValueError) as error:
         raise HTTPException(status_code=400, detail=getattr(error, "code", "body_not_json")) from error
     return _publish_held(receipt_id, record, body["attachments"],
-                         complete=body["complete"], discovered=body["discovered"])
+                         complete=body["complete"], discovered=body["discovered"],
+                         review=body.get("reader_review"))
+
+
+@app.get("/api/v1/intake/{receipt_id}/identity")
+def intake_identity(
+    receipt_id: str,
+    doi: str | None = None,
+    x_corpus_service_token: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    # What the reader reviews before finalize. This example has no registry, so
+    # it answers with the page's own declarations; a real receiver adds the
+    # record it resolved for the DOI and whether it already holds the work.
+    _authenticate(x_corpus_service_token)
+    record = RECEIPTS.get(receipt_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="unknown_receipt")
+    lookup = normalize_doi(doi) if doi else None
+    if doi and not lookup:
+        raise HTTPException(status_code=422, detail="doi_invalid")
+    sidecar = record.get("sidecar") or {}
+    return {
+        "receipt_id": receipt_id,
+        "state": record.get("state"),
+        "reviewable": record.get("state") == "held",
+        "detected_doi": sidecar.get("doi"),
+        "doi": lookup or sidecar.get("doi"),
+        "page": {"title": sidecar.get("title") or "", "authors": sidecar.get("authors") or []},
+        "metadata": None,
+        "metadata_source": None,
+        "metadata_status": "unavailable",
+        "known": None,
+    }
 
 
 def sweep_holds(now: float | None = None) -> int:

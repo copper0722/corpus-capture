@@ -17,6 +17,12 @@ cannot carry a DOI: an envelope that asserts corpus identity is refused, so the
 page's own declarations travel in a **sidecar** beside the payload instead, as
 producer evidence.
 
+The reader may review that evidence before the capture is published: the side
+panel shows the detected DOI and the bibliographic record, and the reader
+confirms or corrects them. The result travels as one more observation,
+`reader_review`, with the finalize call. A receiver decides whether to file the
+capture under it; the page's own declarations are never discarded.
+
 ## `POST /api/v1/intake/html`
 
 Authenticates with either a session the receiver already trusts, or a service
@@ -75,11 +81,16 @@ waits for the attachment uploads and the finalize call below. A held envelope
 is invisible to whatever ingests the inbox, so a bundle is never built from
 the page alone while the reader's browser is still uploading its PDF.
 
+A producer that lets the reader review the capture's identity holds every
+capture, attachments or not, and finalizes only after the review.
+
 A hold is not forever. A receiver publishes a held envelope on its own after a
 bounded time (the reference receiver: one hour) with whatever attachments
 arrived and `attachments_complete: false`. The extension runs a capture in its
-own tab, not in the toolbar popup, and a tab closed mid-run sends the finalize
-below with `keepalive` and the rows it has; the timeout is the backstop for a
+side panel (or, without the side panel API, in its own tab); a panel or tab
+closed while attachments are still uploading sends the finalize below with
+`keepalive` and the rows it has, and a capture waiting only for the reader's
+review stays held so the panel can resume it. The timeout is the backstop for a
 browser that went away entirely.
 
 ## `POST /api/v1/intake/{receipt_id}/attachments`
@@ -143,9 +154,30 @@ Closes a held capture and publishes the envelope.
   ],
   "complete": false,
   "discovered": 2,
-  "overflow": 0
+  "overflow": 0,
+  "reader_review": {
+    "decision": "corrected",
+    "doi": "10.1056/nejmp2607831",
+    "detected_doi": "10.1056/nejmp2607830",
+    "metadata": { "title": "…", "authors": ["…"], "journal": "…", "published": "2026-09-10",
+                  "volume": "395", "issue": "11", "pages": "1001-1003", "issn": "…",
+                  "publisher": "…" },
+    "changed": ["doi"],
+    "reviewed_at": "2026-09-17T07:00:00+00:00"
+  }
 }
 ```
+
+`reader_review` is optional. `decision` is `confirmed` (nothing changed, so
+`changed` is empty) or `corrected`. `doi` is what the reader left in the field,
+normalized, or `null` when the reader says the work has no DOI; `detected_doi`
+is what the capture found on the page. `metadata` carries exactly the nine keys
+shown, bounded to 1000 characters each (authors: at most 100 names of 300).
+A receiver that applies the review keeps the page's declarations under
+`page_declared` in the sidecar and records the review itself as
+`reader_review`. The corpus receiver files the capture under the reviewed DOI,
+and a review that clears the DOI stops the receiver from deriving one from the
+page.
 
 The manifest names every candidate the page offered: `captured` with the hash
 and stored name, `duplicate` with `duplicate_of` (the index of the captured row
@@ -179,6 +211,34 @@ which it does not, instead of looking complete because nothing says otherwise.
 `received` means the receiver holds the bytes and has not processed them yet —
 the honest answer while an ingestion schedule has not fired. It deliberately is
 not "pending" or "processing", which would suggest a worker already holds it.
+
+## `GET /api/v1/intake/{receipt_id}/identity`
+
+What the reader reviews before finalize. `?doi=` looks up a DOI the reader
+typed instead of the detected one.
+
+```json
+{
+  "receipt_id": "<uuid>",
+  "state": "held",
+  "reviewable": true,
+  "detected_doi": "10.1056/nejmp2607830",
+  "doi": "10.1056/nejmp2607831",
+  "page": { "title": "…", "authors": ["…"] },
+  "metadata": { "title": "…", "authors": ["…"], "journal": "…", "published": "2026-09-10",
+                "volume": "395", "issue": "11", "pages": "1001-1003", "issn": "…",
+                "publisher": "…" },
+  "metadata_source": "registry",
+  "metadata_status": "resolved | unresolved | in_progress | no_doi | unavailable",
+  "known": { "title": "…", "reader_url": "https://…" }
+}
+```
+
+`metadata` is the record the receiver resolved for `doi` (or `null`), in the
+same nine keys the review sends back. `known` is set when the receiver already
+holds a work with that DOI. `reviewable: false` means the capture is no longer
+held, so a review would not be applied. A receiver without this endpoint
+answers 404, and the extension then reviews the page's declarations alone.
 
 ## `GET /api/v1/capture/profiles`
 
@@ -265,6 +325,8 @@ single rule to implement:
 | `profile`, `figures` | which profile ran, and the article's figure manifest |
 | `attachments` | the attachment manifest: every linked file, `captured` (with `payload_name`, `sha256`, `bytes`, `mime`), `duplicate` (with `duplicate_of`) or `failed` (with `reason`) |
 | `attachments_discovered`, `attachments_complete` | how many the page linked, and whether every one was captured |
+| `reader_review` | optional: the reader's confirmation or correction of the identity, as sent with finalize |
+| `page_declared` | optional: the page's own `doi`, `title`, `date_published` and `authors`, kept when a receiver filed the capture under `reader_review` |
 
 A sidecar that does not name its payload is ignored. Without that check, a
 leftover `.json` lends its DOI to whatever file later takes the same stem.

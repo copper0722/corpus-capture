@@ -32,7 +32,7 @@ def test_the_manifest_declares_only_what_the_capture_needs():
 
     assert manifest["manifest_version"] == 3
     assert set(manifest["permissions"]) == {
-        "activeTab", "scripting", "storage", "downloads", "alarms"
+        "activeTab", "scripting", "storage", "downloads", "alarms", "sidePanel"
     }
     # Figures come back through the extension's own fetch, which is why the host
     # permission is broad; nothing else here may reach for a session directly.
@@ -187,9 +187,9 @@ class TestStructuralFigureSelection:
         assert "decorative:" in source
         assert "not_declared_by_the_article" in source
 
-    def test_the_popup_shows_the_profile_status(self):
-        popup = _read("popup.js")
-        assert "profileForUrl" in popup
+    def test_the_side_panel_shows_the_profile_status(self):
+        panel = _read("sidepanel.js")
+        assert "profileForUrl" in panel
 
     def test_the_registry_is_fetched_and_cached(self):
         source = _read("capture.js")
@@ -202,9 +202,9 @@ def _node() -> str | None:
 
 
 @pytest.mark.skipif(_node() is None, reason="node is not installed on this host")
-@pytest.mark.parametrize("module", ["serialize.js", "capture.js", "popup.js",
+@pytest.mark.parametrize("module", ["serialize.js", "capture.js", "sidepanel.js",
                                     "options.js", "service-worker.js", "attachments.js",
-                                    "runner.js", "progress.js", "launch.js"])
+                                    "runner.js", "progress.js", "launch.js", "review.js"])
 def test_every_module_parses(module: str):
     """A syntax error here is an extension that never loads and never says why.
 
@@ -252,13 +252,22 @@ def test_the_client_and_the_receiver_agree_on_the_download_name():
     assert from_client == from_library
 
 
-def test_a_capture_runs_in_its_own_tab_not_in_the_popup():
-    """Chrome closes the popup on the first click elsewhere; an upload must survive that."""
+def test_a_capture_runs_in_the_side_panel_not_in_a_popup():
+    """Chrome closes a popup on the first click elsewhere; the side panel stays open."""
 
-    popup = _read("popup.js")
-    assert "openCaptureTab" in popup
-    for moved in ("submitCapture", "uploadAttachment", "collectAttachments"):
-        assert moved not in popup, f"{moved} is running in the popup again"
+    manifest = json.loads(_read("manifest.json"))
+    assert "default_popup" not in manifest["action"]
+    assert manifest["side_panel"] == {"default_path": "sidepanel.html"}
+    assert not (EXTENSION / "popup.html").exists()
+    worker = _read("service-worker.js")
+    # The property name is the trap: the "Icon" spelling throws synchronously
+    # and silently aborts the worker.
+    assert "setPanelBehavior({ openPanelOnActionClick: true })" in worker
+    assert "openPanelOnActionIconClick" not in worker
+    panel = _read("sidepanel.js")
+    assert "runCapture" in panel and "review: reviewing ? reviewStep : null" in panel
+    assert '<script type="module" src="sidepanel.js">' in _read("sidepanel.html")
+    # The progress tab stays as the fallback for a browser without the API.
     assert "runCapture" in _read("progress.js")
     assert 'progress.html?tab=' in _read("launch.js")
 
@@ -267,8 +276,24 @@ def test_one_key_starts_a_capture():
     manifest = json.loads(_read("manifest.json"))
     command = manifest["commands"]["capture-current-tab"]
     assert command["suggested_key"]["default"]
-    assert "capture-current-tab" in _read("service-worker.js")
-    assert "openCaptureTab" in _read("service-worker.js")
+    worker = _read("service-worker.js")
+    assert "capture-current-tab" in worker
+    assert "openCaptureTab" in worker
+    # The panel must open inside the keyboard gesture: nothing awaited before it.
+    handler = worker[worker.index('addListener((command, tab) => {'):]
+    assert handler.index("chrome.sidePanel.open(") < handler.index("await ")
+    assert "CAPTURE_REQUEST_KEY" in worker and "CAPTURE_REQUEST_KEY" in _read("sidepanel.js")
+    assert 'export const CAPTURE_REQUEST_KEY' in _read("launch.js")
+
+
+def test_a_closing_side_panel_closes_only_a_capture_still_uploading():
+    """Uploads die with the panel; a capture waiting only for its review stays held."""
+
+    source = _read("sidepanel.js")
+    hide = source[source.index('addEventListener("pagehide"'):]
+    assert "if (!inFlight || !inFlight.uploading) return;" in hide
+    assert "keepalive: true" in hide
+    assert "PENDING_KEY" in source and "resumeReview" in source
 
 
 def test_a_closing_progress_tab_closes_its_held_capture():

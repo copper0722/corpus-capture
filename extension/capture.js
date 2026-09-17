@@ -55,6 +55,14 @@ async function apiFetch(path, { apiBase, serviceToken, ...init } = {}) {
   return response;
 }
 
+export const REVIEW_KEY = "reviewBeforeFinalize";
+
+/** Whether a capture waits for the reader to confirm its DOI and metadata. On unless turned off. */
+export async function reviewEnabled() {
+  const stored = await chrome.storage.local.get([REVIEW_KEY]);
+  return stored[REVIEW_KEY] !== false;
+}
+
 export async function settings() {
   const stored = await chrome.storage.local.get(["apiBase", "serviceToken"]);
   const configured = String(stored.apiBase || DEFAULT_API_BASE).trim();
@@ -362,9 +370,13 @@ export async function capturePage(tabId, onProgress, profile) {
   // The page's own declaration first; a URL is only ever a fallback, and it has
   // to be trimmed -- NEJM serves `/do/10.1056/NEJMdo008670/full/`, whose path
   // tail is not part of the DOI and turned one into `10.1056/NEJMdo008670/full/`.
-  const doi = normalizeDoi(page.meta.doi)
-    || doiFromUrl(page.canonical_url)
-    || doiFromUrl(page.url);
+  const declared = normalizeDoi(page.meta.doi);
+  const fromCanonical = declared ? null : doiFromUrl(page.canonical_url);
+  const fromUrl = declared || fromCanonical ? null : doiFromUrl(page.url);
+  const doi = declared || fromCanonical || fromUrl;
+  // Where the DOI came from, for the reader who has to judge it. Local to the
+  // extension: the submission schema is closed and does not carry it.
+  const doiSource = declared ? "page_meta" : fromCanonical ? "canonical_url" : fromUrl ? "url" : "none";
   const payloadBytes = new TextEncoder().encode(html).length;
   // The receiver refuses this too, but refusing it here means the bytes are
   // never sent and the reader is told why rather than reading `http_413`.
@@ -377,6 +389,7 @@ export async function capturePage(tabId, onProgress, profile) {
     url: page.canonical_url || page.url,
     final_url: page.url,
     doi,
+    doi_source: doiSource,
     title: (page.meta.title || "").slice(0, LIMITS.maxTitleChars) || null,
     date_published: (page.meta.date_published || "").slice(0, 32) || null,
     publisher_meta: page.publisher_meta || {},
@@ -471,6 +484,32 @@ export async function readReceipt(receiptId) {
 }
 
 /**
+ * What the receiver makes of a held capture's identity: the DOI it read from
+ * the page (or `doi`, when the reader typed another one), the bibliographic
+ * record it resolved, and whether it already holds the work.
+ *
+ * `null` when the receiver does not offer the endpoint (404/405): the review
+ * then shows the page's own declarations only. Any other failure throws.
+ */
+export async function readIdentity(receiptId, doi = null) {
+  const { apiBase, serviceToken } = await settings();
+  const query = doi ? `?doi=${encodeURIComponent(doi)}` : "";
+  const response = await apiFetch(
+    `/api/v1/intake/${encodeURIComponent(receiptId)}/identity${query}`,
+    { apiBase, serviceToken }
+  );
+  if (response.status === 404 || response.status === 405) return null;
+  let payload = null;
+  try { payload = await response.json(); } catch (_) { /* keep the status */ }
+  if (!response.ok) {
+    const error = new Error(describeRefusal(payload, response.status));
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+/**
  * Hand one attachment's bytes to the receiver, beside the held capture.
  *
  * Raw bytes in the body, the description in one header: a JSON envelope
@@ -520,7 +559,8 @@ export async function uploadAttachment(receiptId, meta, bytes) {
  * than looking complete because nothing says otherwise.
  */
 export async function finalizeCapture(
-  receiptId, rows, { complete, discovered, overflow } = {}, { keepalive = false, config = null } = {}
+  receiptId, rows, { complete, discovered, overflow, review = null } = {},
+  { keepalive = false, config = null } = {}
 ) {
   // `config` and `keepalive` exist for one caller: a progress tab that is
   // closing. The request must be STARTED before the page goes away, so the
@@ -541,6 +581,9 @@ export async function finalizeCapture(
         complete: Boolean(complete),
         discovered: Number(discovered || 0),
         overflow: Number(overflow || 0),
+        // What the reader confirmed or corrected: an observation for the
+        // receiver's identity decision, never an identity by itself.
+        ...(review ? { reader_review: review } : {}),
       }),
     }
   );

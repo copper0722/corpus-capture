@@ -1,12 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Corpus Capture — 設定</title>
-<link rel="stylesheet" href="popup.css">
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
 <main>
-  <label for="apiBase">API 位址</label>
-  <input id="apiBase" type="url" placeholder="https://your-corpus.example">
-  <label for="serviceToken">Service token</label>
-  <input id="serviceToken" type="password" autocomplete="off">
-  <button id="save" type="button">儲存</button>
-  <p id="status" role="status"></p>
+  <h1>Corpus Capture — 設定</h1>
+  <form id="settings">
+    <div class="field">
+      <label for="apiBase">API 位址</label>
+      <input id="apiBase" name="apiBase" type="url" placeholder="https://your-corpus.example" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="serviceToken">Service token</label>
+      <input id="serviceToken" name="serviceToken" type="password" autocomplete="off">
+    </div>
+    <div class="row">
+      <input id="review" name="review" type="checkbox">
+      <label for="review">存入前先確認並修正 DOI 與書目資料</label>
+    </div>
+    <div class="row">
+      <button id="save" type="submit">儲存</button>
+    </div>
+    <p id="status" role="status" aria-live="polite"></p>
+  </form>
 </main>
 <script type="module" src="options.js"></script>
+</body>
+</html>

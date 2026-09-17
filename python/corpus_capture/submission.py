@@ -59,6 +59,7 @@ from corpus_capture.sidecar import (
     MAX_ATTACHMENTS,
     normalize_doi,
     validate_attachments,
+    validate_reader_review,
 )
 
 #: The whole request body. A capture is a self-contained HTML page with its
@@ -97,8 +98,9 @@ ATTACHMENT_META_FIELDS = frozenset({
     "index", "kind", "url", "label", "source", "sha256", "bytes", "mime", "ext",
     "final_url", "media_id", "nejmdo",
 })
-#: The finalize body: the manifest and whether every candidate was captured.
-FINALIZE_FIELDS = frozenset({"attachments", "complete", "discovered", "overflow"})
+#: The finalize body: the manifest, whether every candidate was captured, and
+#: optionally the reader's review of the capture's identity.
+FINALIZE_FIELDS = frozenset({"attachments", "complete", "discovered", "overflow", "reader_review"})
 _MIME_RE = re.compile(r"^[a-z0-9!#$&^_.+-]{1,64}/[a-z0-9!#$&^_.+-]{1,96}$")
 #: Fields a producer may NOT send at any size. Identity, filing and rights are
 #: the receiver's to decide; a producer that asserts them is refused loudly
@@ -363,9 +365,19 @@ def validate_finalize(payload: Any) -> dict[str, Any]:
         if not isinstance(value, int) or isinstance(value, bool) or value < 0 or value > 10_000:
             raise SubmissionError(f"{key}_malformed")
         counts[key] = value
-    if _metadata_bytes({"attachments": rows}) > MAX_METADATA_BYTES:
+    review = None
+    if payload.get("reader_review") is not None:
+        try:
+            review = validate_reader_review(payload["reader_review"])
+        except ValueError as exc:
+            raise SubmissionError(getattr(exc, "code", "reader_review_invalid"),
+                                  getattr(exc, "detail", "")) from exc
+    if _metadata_bytes({"attachments": rows, "reader_review": review}) > MAX_METADATA_BYTES:
         raise SubmissionError("metadata_too_large")
-    return {"attachments": rows, "complete": complete, **counts}
+    out = {"attachments": rows, "complete": complete, **counts}
+    if review is not None:
+        out["reader_review"] = review
+    return out
 
 
 class ReceiptStore:

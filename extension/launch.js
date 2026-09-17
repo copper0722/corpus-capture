@@ -1,10 +1,13 @@
 "use strict";
 
-// Where a capture runs. Not in the toolbar popup: Chrome closes the popup the
-// moment the reader clicks anywhere else, and a capture that dies with it
-// leaves the page held at the receiver and the attachments lost halfway. A
-// progress tab the extension opens beside the article lives until it is done,
-// in the background, while the reader keeps reading.
+// Where a capture runs. Normally in the side panel, which stays open beside the
+// article while the reader keeps reading and reviews the identity. The progress
+// tab below is the fallback for a browser without the side panel API: a tab the
+// extension opens beside the article, which lives until the capture is done.
+
+//: Where the keyboard shortcut leaves "capture this tab" for the side panel it
+//: just opened. Session storage: gone with the browser, never synced.
+export const CAPTURE_REQUEST_KEY = "captureRequest";
 
 export function isCapturableUrl(url) {
   return /^https?:/i.test(String(url || ""));

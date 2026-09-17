@@ -1,0 +1,69 @@
+:root {
+  color-scheme: light dark;
+  --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --accent: #0969da;
+  --ok: #1a7f37; --bad: #cf222e; --warn: #9a6700; --bg: #ffffff; --field: #f6f8fa;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --accent: #4493f8;
+    --ok: #3fb950; --bad: #f85149; --warn: #d29922; --bg: #0d1117; --field: #151b23;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.5 system-ui, "PingFang TC", "Noto Sans TC", sans-serif; }
+main { padding: 12px 14px 32px; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 1.05rem; margin: 0; }
+h2 { font-size: .95rem; margin: 0 0 6px; }
+section, form { display: flex; flex-direction: column; gap: 8px; }
+[hidden] { display: none !important; }
+.bar { display: flex; justify-content: space-between; align-items: baseline; }
+.title { font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.hint { color: var(--muted); font-size: .8rem; margin: 0; }
+.note { margin: 0; padding: 6px 8px; border-inline-start: 3px solid var(--accent); background: var(--field); font-size: .85rem; }
+a { color: var(--accent); }
+button {
+  font: inherit; font-weight: 600; min-block-size: 40px; padding: 8px 14px;
+  border: 1px solid transparent; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer;
+}
+button.secondary { background: transparent; color: var(--accent); border-color: var(--line); font-weight: 500; min-block-size: 32px; padding: 4px 10px; }
+button:disabled { opacity: .55; cursor: progress; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.badge { align-self: flex-start; margin: 0; font-size: .75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.badge.supported { color: var(--ok); }
+.badge.generic { color: var(--warn); }
+.badge.unsupported { color: var(--bad); }
+#status { margin: 0; font-weight: 600; white-space: pre-line; }
+#result { margin: 0; white-space: pre-line; }
+#result.ok { color: var(--ok); }
+#result.error { color: var(--bad); }
+#rows { margin: 0; padding-inline-start: 20px; font-size: .85rem; }
+#rows li { overflow-wrap: anywhere; }
+#rows .captured, #rows .duplicate { color: var(--ok); }
+#rows .failed { color: var(--bad); }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 10px; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+legend { font-weight: 600; padding: 0 4px; }
+.field { display: flex; flex-direction: column; gap: 2px; }
+.field label { font-size: .85rem; font-weight: 600; }
+.field .source { font-weight: 400; color: var(--muted); font-size: .75rem; margin-inline-start: 6px; }
+input[type="text"], textarea {
+  font: inherit; font-size: 1rem; inline-size: 100%; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--field); color: var(--fg);
+}
+textarea { resize: vertical; min-block-size: 3.2em; }
+.field.changed input, .field.changed textarea { border-color: var(--warn); }
+.error-msg { display: none; margin: 0; color: var(--bad); font-size: .8rem; }
+input:user-invalid { border-color: var(--bad); }
+input:user-invalid + .error-msg { display: block; }
+.alt { margin: 0; font-size: .8rem; color: var(--muted); display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.alt span { overflow-wrap: anywhere; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+li.receipt, li.pending { border-top: 1px solid var(--line); padding-top: 6px; font-size: .85rem; }
+li .state { color: var(--muted); }
+#status.ok { color: var(--ok); }
+#status.error { color: var(--bad); }
+input[type="checkbox"] { inline-size: 20px; block-size: 20px; }
+input[type="url"], input[type="password"] {
+  font: inherit; font-size: 1rem; inline-size: 100%; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--field); color: var(--fg);
+}

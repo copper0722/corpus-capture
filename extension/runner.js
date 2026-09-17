@@ -51,8 +51,16 @@ export function summarizeAttachments(rows, discoveredCount) {
  * Capture `tabId`. Reports through `onStatus(text)` and `onRow(rows)`, and
  * hands `onHeld({ receiptId, rows, config, discovered })` the live state of a
  * held capture so the caller can close it if its own page goes away.
+ *
+ * With `review`, every online capture is held until the reader has confirmed
+ * or corrected its identity: `review({ receiptId, capture, uploads })` resolves
+ * to the `reader_review` observation (or `null`), while `uploads` resolves to
+ * the finalize arguments once the attachments are in. Both run at once, and
+ * the capture is finalized only when both are done.
  */
-export async function runCapture(tabId, { onStatus = () => {}, onRow = () => {}, onHeld = () => {} } = {}) {
+export async function runCapture(tabId, {
+  onStatus = () => {}, onRow = () => {}, onHeld = () => {}, review = null,
+} = {}) {
   const tab = await chrome.tabs.get(tabId);
   if (!/^https?:/i.test(tab.url || "")) throw new Error("需要一個 http(s) 文章分頁");
   const registry = await profileRegistry();
@@ -95,23 +103,42 @@ export async function runCapture(tabId, { onStatus = () => {}, onRow = () => {},
   };
 
   try {
-    const hold = candidates.length > 0;
+    const reviewing = typeof review === "function";
+    // A hold is what gives the reader time to review: nothing is published
+    // until finalize, so every capture under review is held, attachments or not.
+    const hold = candidates.length > 0 || reviewing;
     const receipt = await submitCapture(capture, capturedAt, { holdAttachments: hold });
     let state = receipt.state || "received";
     let note = "";
+    let readerReview = null;
     if (hold) {
       onHeld({
         receiptId: receipt.receipt_id, rows, config: await settings(),
         discovered: candidates.length, overflow: discovered.overflow || 0,
       });
       await rememberReceipt({ ...base, receipt_id: receipt.receipt_id, state: "held" });
-      await collect((meta, bytes) => uploadAttachment(receipt.receipt_id, meta, bytes), "已收下正文，");
-      onRow(rows);
-      const complete = rows.length === candidates.length && allCaptured(rows)
-        && !discovered.overflow;
+      const uploads = (candidates.length
+        ? collect((meta, bytes) => uploadAttachment(receipt.receipt_id, meta, bytes), "已收下正文，")
+        : Promise.resolve()
+      ).then(() => {
+        onRow(rows);
+        return {
+          rows,
+          complete: rows.length === candidates.length && allCaptured(rows) && !discovered.overflow,
+          discovered: candidates.length,
+          overflow: discovered.overflow || 0,
+        };
+      });
+      const verdict = reviewing
+        ? review({ receiptId: receipt.receipt_id, capture, uploads })
+        : Promise.resolve(null);
+      const [closing, reviewed] = await Promise.all([uploads, verdict]);
+      readerReview = reviewed || null;
+      if (reviewing) onStatus(candidates.length ? "附件已上傳、身分已確認，收尾中…" : "身分已確認，收尾中…");
       try {
-        const closed = await finalizeCapture(receipt.receipt_id, rows, {
-          complete, discovered: candidates.length, overflow: discovered.overflow,
+        const closed = await finalizeCapture(receipt.receipt_id, closing.rows, {
+          complete: closing.complete, discovered: closing.discovered,
+          overflow: closing.overflow, review: readerReview,
         });
         state = (closed && closed.state) || "received";
       } catch (error) {
@@ -124,10 +151,16 @@ export async function runCapture(tabId, { onStatus = () => {}, onRow = () => {},
     const summary = summarizeAttachments(rows, candidates.length);
     await rememberReceipt({
       ...base, receipt_id: receipt.receipt_id, state, attachments_summary: summary,
+      ...(readerReview ? {
+        review_decision: readerReview.decision,
+        doi: readerReview.doi || base.doi,
+        title: readerReview.metadata.title || base.title,
+      } : {}),
     });
     return {
       mode: "online", receiptId: receipt.receipt_id, state, rows, summary, note,
-      complete: !hold || (rows.length === candidates.length && allCaptured(rows)),
+      review: readerReview,
+      complete: !candidates.length || (rows.length === candidates.length && allCaptured(rows)),
     };
   } catch (error) {
     // A 4xx is the server refusing this payload; downloading it would only

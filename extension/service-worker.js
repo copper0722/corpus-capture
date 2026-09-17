@@ -1,12 +1,12 @@
 "use strict";
 
-// The popup cannot own the wait. A receiver ingests on its own schedule, often
+// The side panel cannot own the wait. A receiver ingests on its own schedule, often
 // minutes after the bytes arrive, so a capture is typically still `received`
 // long after the window that submitted it has closed. This worker keeps asking,
 // updates the stored receipt, and marks the toolbar icon when something lands,
-// so reopening the popup shows the outcome instead of a stale "sent".
+// so reopening the side panel shows the outcome instead of a stale "sent".
 import { listReceipts, readReceipt, rememberReceipt } from "./capture.js";
-import { openCaptureTab } from "./launch.js";
+import { CAPTURE_REQUEST_KEY, openCaptureTab } from "./launch.js";
 
 const ALARM = "corpus-capture-poll";
 const SETTLED = new Set([
@@ -55,10 +55,14 @@ chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(ALARM, { periodInMinutes: 1 });
 });
 
-// The keyboard path: one key, no popup. The capture opens in its own tab beside
-// the article, exactly as the popup button does.
-chrome.commands.onCommand.addListener(async (command, tab) => {
-  if (command !== "capture-current-tab") return;
+// The toolbar icon opens the side panel, where a capture starts, runs and is
+// reviewed. Guarded, so a browser without the API still loads this worker and
+// keeps the keyboard path below.
+if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+}
+
+async function captureInTab(tab) {
   let target = tab;
   if (!target) {
     [target] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -70,4 +74,25 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     await chrome.action.setBadgeBackgroundColor({ color: "#cf222e" });
     await chrome.action.setBadgeText({ text: "!" });
   }
+}
+
+// The keyboard path: one key opens the side panel and starts the capture there.
+// `sidePanel.open` must run inside the keyboard gesture, so nothing is awaited
+// before it; the request for the panel is written alongside.
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command !== "capture-current-tab") return;
+  if (!tab || !chrome.sidePanel || !chrome.sidePanel.open) {
+    captureInTab(tab);
+    return;
+  }
+  const opening = chrome.sidePanel.open({ windowId: tab.windowId });
+  const request = chrome.storage.session.set({
+    [CAPTURE_REQUEST_KEY]: { tabId: tab.id, windowId: tab.windowId, at: Date.now() },
+  });
+  Promise.all([opening, request])
+    .then(() => chrome.alarms.create(ALARM, { periodInMinutes: 1 }))
+    .catch(async () => {
+      await chrome.storage.session.remove(CAPTURE_REQUEST_KEY).catch(() => {});
+      await captureInTab(tab);
+    });
 });

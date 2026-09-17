@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corpus Capture</title>
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<main>
+  <header class="bar">
+    <h1>Corpus Capture</h1>
+    <a id="options" href="options.html">設定</a>
+  </header>
+
+  <section id="page" aria-labelledby="page-heading">
+    <h2 id="page-heading">目前分頁</h2>
+    <p id="page-title" class="title">—</p>
+    <p id="profile" class="badge generic">讀取設定檔…</p>
+    <button id="capture" type="button">存入 corpus</button>
+    <p class="hint">快捷鍵 Alt+Shift+S（Mac：Control+Shift+S）。擷取中請保持側欄開啟。</p>
+  </section>
+
+  <section id="run" aria-labelledby="run-heading" hidden>
+    <h2 id="run-heading">擷取進度</h2>
+    <p id="run-title" class="title"></p>
+    <p id="status" role="status" aria-live="polite"></p>
+    <ol id="rows"></ol>
+    <p id="result"></p>
+  </section>
+
+  <form id="review" hidden>
+    <h2>確認文獻身分</h2>
+    <p id="review-title" class="title"></p>
+    <fieldset id="doi-step">
+      <legend>1. 辨識出的 DOI</legend>
+      <div class="field">
+        <label for="doi">DOI</label>
+        <span id="doi-hint" class="hint"></span>
+        <input id="doi" name="doi" type="text" inputmode="url" autocomplete="off"
+               spellcheck="false" enterkeyhint="done"
+               pattern="\s*((https?://)?(dx\.)?doi\.org/|doi:\s*)?10\.\d{4,9}/\S+\s*"
+               aria-describedby="doi-hint doi-error">
+        <p id="doi-error" class="error-msg">DOI 應為 10.xxxx/… 的格式；沒有 DOI 請留空。</p>
+      </div>
+      <div class="row">
+        <a id="doi-link" target="_blank" rel="noreferrer noopener" hidden>在 doi.org 開啟</a>
+        <button id="doi-lookup" type="button" class="secondary">用這個 DOI 重新查詢</button>
+      </div>
+    </fieldset>
+    <fieldset id="meta-step">
+      <legend>2. 書目資料</legend>
+      <p id="meta-status" role="status" aria-live="polite">查詢中…</p>
+      <p id="known" class="note" hidden></p>
+      <div id="fields"></div>
+    </fieldset>
+    <p id="review-hint" class="hint">附件仍在上傳時也可以先確認；兩者都完成後才會入庫。</p>
+    <div class="row">
+      <button id="confirm" type="submit">確認並入庫</button>
+    </div>
+  </form>
+
+  <section id="pending" aria-labelledby="pending-heading" hidden>
+    <h2 id="pending-heading">待確認</h2>
+    <ul id="pending-list"></ul>
+  </section>
+
+  <section aria-labelledby="receipts-heading">
+    <h2 id="receipts-heading">最近的收據</h2>
+    <ul id="receipts"></ul>
+  </section>
+</main>
+<script type="module" src="sidepanel.js"></script>
+</body>
+</html>

@@ -9,19 +9,21 @@ a permission added to the manifest without a justification here fails
 
 Save the article the reader is viewing -- the page with its figures, and the
 files the article itself links (PDF, supplementary files, audio, video) -- to a
-receiver the reader configured, in one action.
+receiver the reader configured, in one action, after the reader has confirmed
+or corrected the article's DOI and bibliographic details in the side panel.
 
 ## Permission justifications
 
 | Permission | Why it is needed |
 |---|---|
-| `activeTab` | The capture starts from the toolbar button or the keyboard command and reads only the tab the reader invoked it on. |
+| `activeTab` | The capture starts from the side panel or the keyboard command and reads only the article tab the reader is on. |
+| `sidePanel` | The toolbar button opens a side panel beside the article, where the reader starts the capture, watches its progress, and confirms or corrects the detected DOI and bibliographic details before the article is saved. |
 | `scripting` | Serializes the article container and discovers its attachment links inside the page; fetches same-origin attachments from the page so the publisher sees the reader's own session and Referer. |
 | `storage` | Keeps the receiver address, the reader's service token, the cached publisher profile registry and the last receipts on this device. |
 | `downloads` | Offline fallback: when the receiver is unreachable, the page, its sidecar and its attachments are saved to the download folder. |
 | `alarms` | Polls the receiver for the admission state of recent captures and updates the toolbar badge. |
 | `<all_urls>` (host) | Articles live on any publisher's site; figures and publisher-profile video hosts must be fetched from the extension, where the page's CORS rules do not block them. Every fetch passes the network policy in `extension/net-policy.js` (https only, no private or loopback hosts, cookies only to the page's own origin). |
-| `commands` (manifest key) | `Alt+Shift+S` / `Control+Shift+S` starts a capture without opening the popup. |
+| `commands` (manifest key) | `Alt+Shift+S` / `Control+Shift+S` opens the side panel and starts a capture of the current article. |
 
 ## Remote code
 
@@ -31,12 +33,14 @@ executed.
 ## Data use (privacy practices)
 
 - Collected: the content of the page the reader chose to save, its attachment
-  files, and the page's bibliographic metadata.
+  files, the page's bibliographic metadata, and the DOI and bibliographic
+  details the reader confirmed or corrected.
 - Sent only to the receiver address the reader entered in the options page. No
   analytics, no third-party transfer, no sale, not used for advertising or
   credit decisions.
-- Stored on the device: receiver address, service token, profile registry cache,
-  the last twenty receipts. No cookies, passwords or browsing history are read
+- Stored on the device: receiver address, service token, the review setting,
+  profile registry cache, the last twenty receipts, and captures still waiting
+  for the reader's confirmation. No cookies, passwords or browsing history are read
   or stored.
 - Attachments are fetched with the reader's existing session only from the
   article's own origin; files from a profile-listed media host are fetched
@@ -45,8 +49,15 @@ executed.
 ## Store listing
 
 - Name: Corpus Capture
-- Summary: 把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle。
+- Summary: 把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle；側欄可先確認並修正 DOI 與書目資料。
 - Category: Productivity
+
+## Version history
+
+| Version | Date | Change |
+|---|---|---|
+| 1.3.0 | 2026-09-17 | Side panel replaces the popup: capture runs beside the article, and the reader confirms or corrects the DOI and bibliographic details before the receiver publishes the capture. New permission: `sidePanel`. Screenshots need refreshing. |
+| 1.2.0 | 2026-09-17 | One capture also saves the article's PDF, supplements, audio and video. |
 
 ## Status
 

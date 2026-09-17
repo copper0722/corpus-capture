@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Side panel (extension 1.3.0).** The toolbar icon opens a side panel that
+  stays beside the article; the capture runs there, and the keyboard command
+  opens it and starts the capture. The popup is gone. A browser without the
+  side panel API keeps the progress tab.
+- **Identity review.** Every capture is held until the reader confirms or
+  corrects the detected DOI and the bibliographic record (title, authors,
+  journal, date, volume, issue, pages, ISSN, publisher). Attachments upload in
+  parallel. The result is sent with finalize as `reader_review`, validated by
+  `validate_reader_review`, and a receiver that applies it keeps the page's own
+  declarations as `page_declared`. A review left unfinished stays held and can
+  be resumed from the panel.
+- **`GET /api/v1/intake/{receipt_id}/identity`.** What the reader reviews: the
+  detected DOI, the page's declarations, the receiver's resolved record for the
+  DOI (or a DOI the reader typed), and whether the receiver already holds the
+  work. A receiver without it answers 404 and the panel reviews the page alone.
+
 ## v0.2.0 — 2026-09-17
 
 ### Added

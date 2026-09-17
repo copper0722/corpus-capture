@@ -105,6 +105,21 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _PAYLOAD_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 
 
+#: The reader's review of a held capture's identity (sidecar ``reader_review``).
+#: An observation a receiver weighs, never an identity by itself.
+REVIEW_DECISIONS = ("confirmed", "corrected")
+REVIEW_METADATA_FIELDS = (
+    "title", "authors", "journal", "published", "volume", "issue", "pages", "issn", "publisher",
+)
+REVIEW_CHANGEABLE = ("doi", *REVIEW_METADATA_FIELDS)
+MAX_REVIEW_TEXT_CHARS = 1000
+MAX_REVIEW_AUTHOR_CHARS = 300
+MAX_AUTHORS_IN_REVIEW = 100
+READER_REVIEW_FIELDS = frozenset({
+    "decision", "doi", "detected_doi", "metadata", "changed", "reviewed_at",
+})
+
+
 class SidecarError(ValueError):
     """A typed refusal carrying a stable code and no payload content."""
 
@@ -281,6 +296,71 @@ def validate_attachments(rows: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _review_doi(value: Any, code: str) -> str | None:
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise SidecarError(code)
+    normalized = normalize_doi(value)
+    if not normalized:
+        raise SidecarError(code)
+    return normalized
+
+
+def validate_reader_review(payload: Any) -> dict[str, Any]:
+    """Check a reader's identity review and return it normalized, or raise.
+
+    Exact keys, bounded text, a DOI that is either absent (the reader says the
+    work has none) or well-formed, and a timezone-aware review time. ``changed``
+    names only fields the review carries. Nothing here decides identity: a
+    receiver that files the capture under the reviewed DOI does so as its own
+    decision, on the reader's evidence.
+    """
+
+    if not isinstance(payload, dict):
+        raise SidecarError("reader_review_not_an_object")
+    unknown = set(payload) - READER_REVIEW_FIELDS
+    if unknown:
+        raise SidecarError("reader_review_unknown_field", ", ".join(sorted(unknown)))
+    decision = payload.get("decision")
+    if decision not in REVIEW_DECISIONS:
+        raise SidecarError("reader_review_decision_invalid", str(decision))
+    doi = _review_doi(payload.get("doi"), "reader_review_doi_invalid")
+    detected = _review_doi(payload.get("detected_doi"), "reader_review_detected_doi_invalid")
+    metadata = payload.get("metadata", {})
+    if not isinstance(metadata, dict) or set(metadata) - set(REVIEW_METADATA_FIELDS):
+        raise SidecarError("reader_review_metadata_invalid")
+    clean: dict[str, Any] = {}
+    for field in REVIEW_METADATA_FIELDS:
+        value = metadata.get(field, [] if field == "authors" else "")
+        if field == "authors":
+            if not isinstance(value, list) or len(value) > MAX_AUTHORS_IN_REVIEW or any(
+                not isinstance(name, str) or len(name) > MAX_REVIEW_AUTHOR_CHARS for name in value
+            ):
+                raise SidecarError("reader_review_metadata_invalid", field)
+            clean[field] = [name.strip() for name in value if name.strip()]
+        else:
+            if not isinstance(value, str) or len(value) > MAX_REVIEW_TEXT_CHARS:
+                raise SidecarError("reader_review_metadata_invalid", field)
+            clean[field] = value.strip()
+    changed = payload.get("changed", [])
+    if not isinstance(changed, list) or any(item not in REVIEW_CHANGEABLE for item in changed):
+        raise SidecarError("reader_review_changed_invalid")
+    reviewed_at = str(payload.get("reviewed_at") or "")
+    try:
+        moment = datetime.fromisoformat(reviewed_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SidecarError("reader_review_time_invalid") from exc
+    if moment.tzinfo is None:
+        raise SidecarError("reader_review_time_invalid")
+    if decision == "confirmed" and changed:
+        raise SidecarError("reader_review_decision_invalid", "confirmed with changes")
+    return {
+        "decision": decision, "doi": doi, "detected_doi": detected, "metadata": clean,
+        "changed": list(dict.fromkeys(changed)), "reviewed_at": moment.isoformat(),
+    }
+
+
 def validate_sidecar(payload: Any, *, payload_name: str | None = None) -> dict[str, Any]:
     """Check a sidecar against the contract, or raise. Returns it unchanged.
 
@@ -320,6 +400,8 @@ def validate_sidecar(payload: Any, *, payload_name: str | None = None) -> dict[s
     for key in ("attachments_complete",):
         if key in payload and not isinstance(payload[key], bool):
             raise SidecarError("sidecar_field_malformed", key)
+    if payload.get("reader_review") is not None:
+        validate_reader_review(payload["reader_review"])
     for key in ("attachments_discovered",):
         value = payload.get(key)
         if value is not None and (

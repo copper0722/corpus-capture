@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Corpus Capture",
-  "version": "1.2.0",
-  "description": "把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle。",
+  "version": "1.3.0",
+  "description": "把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle；側欄可先確認並修正 DOI 與書目資料。",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
     "downloads",
-    "alarms"
+    "alarms",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -18,8 +19,10 @@
     "type": "module"
   },
   "action": {
-    "default_title": "存入 corpus",
-    "default_popup": "popup.html"
+    "default_title": "開啟 Corpus Capture 側欄"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "options_page": "options.html",
   "content_security_policy": {
