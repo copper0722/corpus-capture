@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -84,7 +85,7 @@ PROFILE_KEYS = {
     "series_source", "access_markers", "status", "fixture", "notes", "reason",
     "drop_selectors", "drop_asset_hosts", "drop_asset_patterns",
     "decorative_asset_patterns", "unnumbered_asset_patterns", "asset_origins",
-    "attachment_link_selectors", "attachment_origins",
+    "attachment_link_selectors", "attachment_origins", "media_metadata_endpoints",
 }
 REQUIRED_KEYS = {
     "id", "display_name", "host_patterns", "article_container_selectors",
@@ -97,6 +98,7 @@ INHERITED_KEYS = (
     "meta_sources", "doi_source", "series_source", "access_markers",
     "drop_selectors", "decorative_asset_patterns", "unnumbered_asset_patterns",
     "asset_origins", "attachment_link_selectors", "attachment_origins",
+    "media_metadata_endpoints",
 )
 
 
@@ -112,6 +114,29 @@ def _require_str_list(record: dict[str, Any], key: str, *, where: str) -> None:
         not isinstance(item, str) or not item.strip() for item in value
     ):
         raise ProfileRegistryError(f"{where}.{key} must be a list of non-empty strings")
+
+
+#: Host and path only -- the registry is pure data and names no scheme -- with a
+#: ``{media_id}`` placeholder. The extension supplies ``https://``.
+_MEDIA_TEMPLATE_RE = re.compile(r"^[A-Za-z0-9.-]+/[^\s:]*\{media_id\}[^\s:]*$")
+
+
+def _require_media_templates(profile: dict[str, Any], *, where: str) -> None:
+    """``media_metadata_endpoints``: resolver name -> host/path template with {media_id}."""
+
+    value = profile.get("media_metadata_endpoints")
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ProfileRegistryError(f"{where}.media_metadata_endpoints must be an object")
+    for resolver, template in value.items():
+        if not isinstance(resolver, str) or not isinstance(template, str) or not (
+            _MEDIA_TEMPLATE_RE.fullmatch(template)
+        ):
+            raise ProfileRegistryError(
+                f"{where}.media_metadata_endpoints[{resolver!r}] must be a host/path "
+                "template carrying {media_id}, without a scheme"
+            )
 
 
 def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
@@ -152,6 +177,7 @@ def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
             "attachment_link_selectors", "attachment_origins",
         ):
             _require_str_list(profile, key, where=where)
+        _require_media_templates(profile, where=where)
         # The rule that keeps `status` honest. A claim of support with no fixture
         # is an intention, and an intention is what this field exists not to be.
         if profile["status"] == "supported" and not str(profile.get("fixture") or "").strip():

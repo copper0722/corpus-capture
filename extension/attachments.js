@@ -227,8 +227,14 @@ export function discoverAttachmentsInPage(profile, limits) {
     jwIds.add(match[1]);
     if (jwIds.size >= 12) break;
   }
-  for (const id of jwIds) {
-    add("video", `https://cdn.jwplayer.com/v2/media/${id}`, "Video", "jwplayer", { resolver: "jwplayer", media_id: id });
+  // The metadata endpoint is publisher knowledge and lives in the registry
+  // (`media_metadata_endpoints`, host and path only), not here: without it a
+  // media id cannot be resolved, so it is not offered as a candidate at all.
+  const jwTemplate = String((profile.media_metadata_endpoints || {}).jwplayer || "");
+  const jwUsable = /^[A-Za-z0-9.-]+\/\S*\{media_id\}/.test(jwTemplate);
+  for (const id of jwUsable ? jwIds : []) {
+    add("video", "https:" + "//" + jwTemplate.split("{media_id}").join(id), "Video",
+      "jwplayer", { resolver: "jwplayer", media_id: id });
   }
 
   // 4. NEJM Quick Take / Double Take cards. The card carries the player's
@@ -607,7 +613,11 @@ async function resolveVideo(tabId, candidate, { pageUrl, profile }) {
     mediaId = found[1] || found[2] || found[3];
   }
   if (!/^[A-Za-z0-9]{8}$/.test(mediaId)) return { ok: false, reason: "media_id_missing" };
-  const metadataUrl = `https://cdn.jwplayer.com/v2/media/${mediaId}`;
+  const template = String(((profile && profile.media_metadata_endpoints) || {}).jwplayer || "");
+  if (!/^[A-Za-z0-9.-]+\/\S*\{media_id\}/.test(template)) {
+    return { ok: false, reason: "no_media_resolver" };
+  }
+  const metadataUrl = "https:" + "//" + template.split("{media_id}").join(mediaId);
   const metadataDecision = attachmentDecision(metadataUrl, { pageUrl, profile });
   if (!metadataDecision.allowed) return { ok: false, reason: `metadata_${metadataDecision.reason}` };
   const controller = new AbortController();

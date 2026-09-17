@@ -98,8 +98,9 @@ export function profileForUrl(registry, url) {
       for (const key of ["article_container_selectors", "figure_selectors",
                          "caption_selectors", "access_markers", "drop_selectors",
                          "decorative_asset_patterns", "unnumbered_asset_patterns",
-                         "asset_origins"]) {
-        if (!profile[key]) merged[key] = generic[key] || [];
+                         "asset_origins", "attachment_link_selectors",
+                         "attachment_origins", "media_metadata_endpoints"]) {
+        if (!profile[key]) merged[key] = generic[key] || (key === "media_metadata_endpoints" ? {} : []);
       }
       return merged;
     }

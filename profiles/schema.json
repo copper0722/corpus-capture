@@ -139,6 +139,14 @@
         "attachment_origins": {
           "$ref": "#/$defs/selectorList",
           "description": "Hosts an ATTACHMENT may be fetched from anonymously when it is not on the page's origin, such as the publisher's video CDN. Never receives the reader's cookies."
+        },
+        "media_metadata_endpoints": {
+          "description": "Per-resolver metadata endpoints for embedded players: host and path, with a {media_id} placeholder and no scheme (the registry names no URLs; the extension supplies https). Publisher knowledge, kept here so the extension ships no third-party endpoint.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9.-]+/[^\\s:]*\\{media_id\\}[^\\s:]*$"
+          }
         }
       }
     },
@@ -240,6 +248,14 @@
         "attachment_origins": {
           "$ref": "#/$defs/selectorList",
           "description": "Hosts an ATTACHMENT may be fetched from anonymously when it is not on the page's origin, such as the publisher's video CDN. Never receives the reader's cookies."
+        },
+        "media_metadata_endpoints": {
+          "description": "Per-resolver metadata endpoints for embedded players: host and path, with a {media_id} placeholder and no scheme (the registry names no URLs; the extension supplies https). Publisher knowledge, kept here so the extension ships no third-party endpoint.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9.-]+/[^\\s:]*\\{media_id\\}[^\\s:]*$"
+          }
         }
       },
       "allOf": [

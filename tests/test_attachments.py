@@ -100,7 +100,11 @@ PAGE = f"""
 """
 
 
+JW_TEMPLATES = {"jwplayer": "cdn.jwplayer.com/v2/media/{media_id}"}
+
+
 def _discover(markup: str = PAGE, profile: dict | None = None) -> dict:
+    profile = {"media_metadata_endpoints": JW_TEMPLATES, **(profile or {})}
     return _run(f"""
       import {{ parseHTML }} from "linkedom";
       import {{ discoverAttachmentsInPage }} from "{ATTACHMENTS_JS}";
@@ -111,7 +115,7 @@ def _discover(markup: str = PAGE, profile: dict | None = None) -> dict:
         origin: "https://www.nejm.org",
         href: "https://www.nejm.org/doi/full/10.1056/NEJMp0000001",
       }};
-      console.log(JSON.stringify(discoverAttachmentsInPage({json.dumps(profile or {})}, LIMITS)));
+      console.log(JSON.stringify(discoverAttachmentsInPage({json.dumps(profile)}, LIMITS)));
     """)
 
 
@@ -487,4 +491,32 @@ def test_a_schema_refusal_reads_as_a_sentence():
         "capture_not_held",
         "http_502",
     ]
+
+
+@needs_node
+@needs_dom
+def test_without_a_registered_resolver_a_media_id_is_not_a_candidate():
+    """The extension ships no player endpoint; the registry names it."""
+
+    found = _run(f"""
+      import {{ parseHTML }} from "linkedom";
+      import {{ discoverAttachmentsInPage }} from "{ATTACHMENTS_JS}";
+      const {{ document }} = parseHTML({json.dumps(PAGE)});
+      globalThis.document = document;
+      globalThis.location = {{ origin: "https://www.nejm.org", href: "https://www.nejm.org/x" }};
+      console.log(JSON.stringify(discoverAttachmentsInPage({{}}, {{ maxAttachments: 40 }})));
+    """)
+    assert not [row for row in found["attachments"] if row.get("resolver") == "jwplayer"]
+
+
+def test_the_registry_names_the_player_endpoint_and_validates_it():
+    from corpus_capture.profiles import ProfileRegistryError, load_registry, validate_registry
+
+    registry = load_registry()
+    assert "{media_id}" in registry["generic"]["media_metadata_endpoints"]["jwplayer"]
+    broken = json.loads(json.dumps(registry))
+    for bad in ("https://cdn.x.test/v/{media_id}", "cdn.x.test/v/no-id"):
+        broken["profiles"][0]["media_metadata_endpoints"] = {"jwplayer": bad}
+        with pytest.raises(ProfileRegistryError):
+            validate_registry(broken)
 

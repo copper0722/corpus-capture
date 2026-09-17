@@ -94,7 +94,10 @@
       "*.jwplatform.com",
       "*.jwpsrv.com",
       "*.jwpcdn.com"
-    ]
+    ],
+    "media_metadata_endpoints": {
+      "jwplayer": "cdn.jwplayer.com/v2/media/{media_id}"
+    }
   },
   "profiles": [
     {
