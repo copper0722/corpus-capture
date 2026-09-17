@@ -170,6 +170,28 @@ export function discoverAttachmentsInPage(profile, limits) {
   const isSupplementLink = (href, label) =>
     SUPPLEMENT_HREF.test(href) || (SUPPLEMENT_LABEL.test(label) && DOC_SUFFIX.test(href));
 
+  // A PDF on somebody else's site is a document the article cites, not the
+  // article: a cycling position statement links the WADA Prohibited List from
+  // its body text. The article's own PDF is on the page's origin, on a host the
+  // profile names, or declared by citation_pdf_url.
+  const namedHosts = []
+    .concat(Array.isArray(profile.attachment_origins) ? profile.attachment_origins : [])
+    .concat(Array.isArray(profile.asset_origins) ? profile.asset_origins : [])
+    .map((pattern) => String(pattern || "").toLowerCase().replace(/^\./, "").replace(/\.$/, ""))
+    .filter(Boolean);
+  const onOwnSite = (raw) => {
+    const found = abs(raw);
+    if (!found) return false;
+    const url = new URL(found);
+    if (url.origin === location.origin) return true;
+    const host = url.hostname.toLowerCase();
+    return namedHosts.some((pattern) => (pattern.startsWith("*.")
+      ? host === pattern.slice(2) || host.endsWith(`.${pattern.slice(2)}`)
+      : host === pattern));
+  };
+  // Link text that is the link's own address says nothing about the file.
+  const isAddress = (label) => /^(?:https?:\/\/|www\.)\S+$/i.test(label);
+
   // 1. The article's PDF. The page's own declaration first; the publisher's
   //    reader links second. A supplement that happens to be a PDF is not the
   //    article and is classified before the PDF rule can claim it.
@@ -190,8 +212,9 @@ export function discoverAttachmentsInPage(profile, limits) {
       continue;
     }
     if (PDF_HREF.test(href)) {
+      if (!onOwnSite(href)) continue;
       const strong = /\/doi\/e?pdf(?:direct)?\/|\/content\/pdf\/|\/article\/pdf\/|\/articlepdf\//i.test(href);
-      if (strong || inArticle(anchor) || PDF_LABEL.test(label)) {
+      if (strong || inArticle(anchor) || (PDF_LABEL.test(label) && !isAddress(label))) {
         add("pdf", href, label || "PDF", "anchor");
       }
     }

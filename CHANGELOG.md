@@ -23,6 +23,24 @@
 - **`GET /api/v1/intake/{receipt_id}/identity`.** The same answer for a held
   capture, with the page's declarations as the receiver recorded them.
 
+### Fixed
+
+- **A PDF on another site is not an attachment.** A body link to someone
+  else's PDF (a cycling position statement citing the WADA Prohibited List) was
+  listed as the article's PDF and reported as a missing attachment
+  (`off_origin`). PDF links now count only on the page's origin, on a host the
+  profile names, or when declared by `citation_pdf_url`; link text that is just
+  an address no longer counts as a "PDF" label.
+- **Placeholder volume and issue.** An ahead-of-print page's `-1`/`aop`
+  (Human Kinetics) or `0`/`0` (Taylor & Francis) is no longer proposed as the
+  volume and issue. An issue of `0` beside a real volume is kept.
+- **Publication date.** A page's `2026/09/15` is shown as `2026-09-15`, and it
+  is kept when the registry knows only the year.
+- **Retrying the lookup.** Asking again for the page's own DOI (after "in
+  progress") resets what a correction is measured against and keeps what the
+  reader typed; before, the retried record itself read as the reader's
+  correction.
+
 ## v0.2.0 — 2026-09-17
 
 ### Added

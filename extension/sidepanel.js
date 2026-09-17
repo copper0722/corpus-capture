@@ -259,7 +259,7 @@ const LOOKUP_NOTE = {
   unresolved: "接收端沒有查到這個 DOI 的書目資料；以下為頁面宣告的資料。",
 };
 
-async function lookup(doi, { initial = false } = {}) {
+async function lookup(doi) {
   if (!preview) return;
   const mine = preview.generation;
   const status = $("#meta-status");
@@ -283,10 +283,14 @@ async function lookup(doi, { initial = false } = {}) {
     return;
   }
   const proposal = mergeProposal(preview.pageMeta, identity);
-  // The page's own DOI defines the baseline a correction is measured against;
-  // a lookup for a DOI the reader typed is itself part of the correction.
-  if (initial) preview.baseline = { doi: preview.detectedDoi, metadata: proposal.values };
-  applyProposal(proposal, { overwriteTouched: !initial });
+  // The record for the page's own DOI is what a correction is measured
+  // against, however often it is asked for (a retry after "in progress"
+  // included), and it never overwrites what the reader typed. A DOI the reader
+  // typed is another work: its record replaces the form, and that replacement
+  // is itself the correction.
+  const own = (normalizeDoi(doi) || null) === (normalizeDoi(preview.detectedDoi) || null);
+  if (own) preview.baseline = { doi: preview.detectedDoi, metadata: proposal.values };
+  applyProposal(proposal, { overwriteTouched: !own });
   showKnown(identity);
   const source = SOURCE_LABEL[identity.metadata_source] || identity.metadata_source || "接收端";
   status.textContent = identity.metadata
@@ -325,7 +329,7 @@ async function loadPreview(tab) {
   $("#review").hidden = false;
   $("#save").disabled = running;
   pageNote("");
-  await lookup(page.doi, { initial: true });
+  await lookup(page.doi);
 }
 
 $("#doi").addEventListener("input", () => {

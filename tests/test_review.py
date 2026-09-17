@@ -79,10 +79,54 @@ def test_the_page_declarations_become_the_review_fields():
         "title": "Artificial Intelligence and the Workforce",
         "authors": ["Ada Lovelace", "Grace Hopper"],
         "journal": "N Engl J Med",
-        "published": "2026/09/10",
+        # Google Scholar's 2026/09/10 is shown as the ISO day it names.
+        "published": "2026-09-10",
         "volume": "395", "issue": "11", "pages": "1001-1003",
         "issn": "0028-4793", "publisher": "",
     }
+
+
+@needs_node
+@pytest.mark.parametrize(
+    ("volume", "issue", "expected"),
+    [
+        # Human Kinetics, ahead of print (the capture that found this).
+        ("-1", "aop", ("", "")),
+        # Taylor & Francis, Latest Articles.
+        ("0", "0", ("", "")),
+        # A real supplement issue the registry records as 0 survives.
+        ("40", "0", ("40", "0")),
+        ("12", "Online First", ("12", "")),
+        ("Ahead of Print", "", ("", "")),
+        (" -2 ", "Suppl 1", ("", "Suppl 1")),
+        ("36", "6", ("36", "6")),
+    ],
+)
+def test_a_placeholder_enumeration_is_never_proposed(volume, issue, expected):
+    meta = {**CAPTURE["publisher_meta"], "volume": volume, "issue": issue}
+    capture = {**CAPTURE, "publisher_meta": meta}
+    fields = _run(f"console.log(JSON.stringify(review.pageMetadata({json.dumps(capture)})));")
+    assert (fields["volume"], fields["issue"]) == expected
+
+
+@needs_node
+def test_a_page_day_refines_a_registry_year_but_never_overrides_a_registry_day():
+    merged = _run(
+        "const day = (d) => ({publisher_meta: {publication_date: d}});"
+        "const said = (d) => ({metadata_source: 'registry', metadata: {published: d}});"
+        "const page = review.pageMetadata(day('2026/09/15'));"
+        "const year = review.mergeProposal(page, said('2026'));"
+        "const other = review.mergeProposal(page, said('2026-10-01'));"
+        "const impossible = review.pageMetadata(day('2026/02/30'));"
+        "console.log(JSON.stringify({year, other, impossible: impossible.published}));"
+    )
+    assert merged["year"]["values"]["published"] == "2026-09-15"
+    assert merged["year"]["sources"]["published"] == "page"
+    assert "published" not in merged["year"]["alternatives"]
+    assert merged["other"]["values"]["published"] == "2026-10-01"
+    assert merged["other"]["alternatives"]["published"] == {"source": "page", "value": "2026-09-15"}
+    # Not a real day: shown as the page printed it, for the reader to judge.
+    assert merged["impossible"] == "2026/02/30"
 
 
 @needs_node

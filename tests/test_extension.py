@@ -303,3 +303,14 @@ def test_a_closing_progress_tab_closes_its_held_capture():
     assert "pagehide" in source and "keepalive: true" in source
     assert "keepalive" in _read("capture.js")
 
+
+
+def test_a_retry_for_the_page_doi_is_still_the_proposal():
+    """A lookup retried after "in progress" is the proposal, not the reader's correction."""
+
+    source = _read("sidepanel.js")
+    start = source.index("async function lookup(doi)")
+    body = source[start:source.index("async function loadPreview(")]
+    assert "normalizeDoi(preview.detectedDoi)" in body
+    assert "if (own) preview.baseline" in body
+    assert "overwriteTouched: !own" in body

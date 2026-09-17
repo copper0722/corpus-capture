@@ -174,6 +174,31 @@ class TestDiscovery:
         assert row["kind"] == "other"
         assert row["source"].startswith("profile:")
 
+    def test_a_pdf_on_another_site_is_a_citation_not_an_attachment(self):
+        # The cycling position statement that found this links the WADA
+        # Prohibited List from its body; the link text is the address.
+        cited = "https://www.wada-ama.org/sites/default/files/2025list_en.pdf"
+        extra = (
+            f'<p>See <a href="{cited}">{cited}</a>.</p>'
+            f'<a href="{_BASE}/doi/story/figure-legends.pdf">figure legends</a>'
+            '<a href="https://cdn.example-publisher.net/articles/x.pdf">Download PDF</a>'
+            '</main><aside><a href="https://www.nejm.org/help/guide.pdf">'
+            'https://www.nejm.org/help/guide.pdf</a></aside>'
+        )
+        markup = PAGE.replace("</main>", extra)
+        urls = {row["url"] for row in _discover(markup)["attachments"]}
+        assert cited not in urls
+        # A bare PDF link on the page's own origin inside the article stays.
+        assert f"{_BASE}/doi/story/figure-legends.pdf" in urls
+        # Off-site is off-site until the profile names the host.
+        assert "https://cdn.example-publisher.net/articles/x.pdf" not in urls
+        named = _discover(markup, {"attachment_origins": ["*.example-publisher.net"]})
+        assert "https://cdn.example-publisher.net/articles/x.pdf" in {
+            row["url"] for row in named["attachments"]
+        }
+        # Outside the article, an address is not a label that says "PDF".
+        assert "https://www.nejm.org/help/guide.pdf" not in urls
+
     def test_only_http_targets_are_ever_candidates(self):
         extra = '<a href="javascript:void(0)">x.pdf</a><a href="ftp://x.test/a.mp3">a</a></main>'
         found = _discover(PAGE.replace("</main>", extra))

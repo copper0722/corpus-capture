@@ -135,9 +135,12 @@ The producer fetched the bytes with the reader's own session, from inside the
 page, because a publisher's PDF and media links want the tab's cookies AND its
 Referer. It fetched them only from the page's origin, or from an origin the
 publisher profile names for anonymous video (`attachment_origins`); nothing a
-page can link reaches a private host. And it looked at the bytes before sending
-them: a login page answered with status 200 to a PDF request is recorded as a
-gap (`html_instead_of_pdf`), never uploaded as the PDF.
+page can link reaches a private host. A PDF linked on another site is not a
+candidate at all: it is a document the article cites (a position statement
+linking an anti-doping list), not the article's copy, unless the page declares it
+as `citation_pdf_url` or the profile names its host. And it looked at the bytes
+before sending them: a login page answered with status 200 to a PDF request is
+recorded as a gap (`html_instead_of_pdf`), never uploaded as the PDF.
 
 ## `POST /api/v1/intake/{receipt_id}/finalize`
 
@@ -341,7 +344,7 @@ single rule to implement:
 | `html_sha256`, `html_bytes` | the payload these describe |
 | `payload_name` | the payload this sidecar belongs to |
 | `capture_tool` | producer and version |
-| `publisher_meta` | bounded set of the page's own bibliographic declarations |
+| `publisher_meta` | bounded set of the page's own bibliographic declarations, as printed; a receiver treats a placeholder volume or issue (`-1`, `aop`, `Online First`, a volume of `0`) as absent |
 | `authors` | names in page order |
 | `access` | what the reader's session saw |
 | `meta_sha256` | hash of the normalized meta block |

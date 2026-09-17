@@ -52,6 +52,47 @@ export function cleanAuthors(value) {
     .slice(0, REVIEW_LIMITS.authors);
 }
 
+//: What a page prints for volume and issue before the article is in an issue:
+//: Human Kinetics declares "-1" and "aop", Taylor & Francis "0" and "0". The
+//: receiver applies the same rule (corpus-ops `assigned_enumeration`).
+export const UNASSIGNED_ENUMERATION = new Set([
+  "aop", "ahead of print", "ahead-of-print", "online ahead of print", "epub ahead of print",
+  "online first", "online-first", "onlinefirst", "in press", "inpress", "articles in press",
+  "early view", "earlyview", "early access", "just accepted", "forthcoming", "latest articles",
+  "n/a", "na", "none", "null", "nil", "undefined", "nan", "tbd", "tba", "-", "--", "?",
+]);
+
+/**
+ * The volume and issue a citation can print; "" for a placeholder.
+ *
+ * A volume of 0 is a placeholder. An issue of 0 is one only beside a
+ * placeholder volume: registries record real supplement issues as 0.
+ */
+export function assignedEnumeration(volume, issue) {
+  const unassigned = (text) => UNASSIGNED_ENUMERATION.has(text.toLowerCase()) || /^-\s*\d+$/.test(text);
+  const vol = clip(volume);
+  const iss = clip(issue);
+  const assignedVolume = !vol || unassigned(vol) || /^0+$/.test(vol) ? "" : vol;
+  const assignedIssue = !iss || unassigned(iss) || (/^0+$/.test(iss) && !assignedVolume) ? "" : iss;
+  return { volume: assignedVolume, issue: assignedIssue };
+}
+
+/**
+ * A day written the way Google Scholar asks pages to write it (2026/09/15),
+ * as an ISO date. Anything that is not a whole, real day is returned as given.
+ */
+export function isoDay(value) {
+  const text = clip(value);
+  const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(text);
+  if (!match) return text;
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return text;
+  }
+  return `${match[1]}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 /** Normalize one metadata record to exactly METADATA_FIELDS. */
 export function cleanMetadata(record) {
   const source = record && typeof record === "object" ? record : {};
@@ -67,13 +108,14 @@ export function pageMetadata(capture) {
   const meta = (capture && capture.publisher_meta) || {};
   const first = clip(meta.first_page);
   const last = clip(meta.last_page);
+  const { volume, issue } = assignedEnumeration(meta.volume, meta.issue);
   return cleanMetadata({
     title: meta.title || (capture && capture.title),
     authors: (capture && capture.authors) || [],
     journal: meta.journal,
-    published: meta.publication_date || (capture && capture.date_published),
-    volume: meta.volume,
-    issue: meta.issue,
+    published: isoDay(meta.publication_date || (capture && capture.date_published)),
+    volume,
+    issue,
     pages: first && last && first !== last ? `${first}-${last}` : first,
     issn: meta.issn,
     publisher: meta.publisher,
@@ -84,6 +126,12 @@ function same(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// "2026-09-15" says everything "2026" says, and more.
+function refines(precise, coarse) {
+  return precise.length > coarse.length && precise.startsWith(coarse)
+    && /^[-/]/.test(precise.slice(coarse.length));
+}
+
 /**
  * Combine the page's declarations with what the receiver resolved.
  *
@@ -91,6 +139,8 @@ function same(a, b) {
  * record or the corpus itself, while the page is only what the publisher chose
  * to print. The page's value is kept as the alternative whenever the two
  * disagree, so the reader sees the disagreement instead of a silent overwrite.
+ * A date is the one exception: a registry that knows only the year does not
+ * disagree with the page's day in that year, it knows less.
  */
 export function mergeProposal(page, receiver) {
   const fromPage = cleanMetadata(page);
@@ -104,7 +154,10 @@ export function mergeProposal(page, receiver) {
     const receiverValue = resolved ? resolved[field] : (field === "authors" ? [] : "");
     const hasReceiver = field === "authors" ? receiverValue.length > 0 : Boolean(receiverValue);
     const hasPage = field === "authors" ? pageValue.length > 0 : Boolean(pageValue);
-    if (hasReceiver) {
+    if (field === "published" && hasReceiver && hasPage && refines(pageValue, receiverValue)) {
+      values[field] = pageValue;
+      sources[field] = "page";
+    } else if (hasReceiver) {
       values[field] = receiverValue;
       sources[field] = sourceName;
       if (hasPage && !same(pageValue, receiverValue)) {
