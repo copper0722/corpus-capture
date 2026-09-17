@@ -140,6 +140,27 @@ def test_a_confirmation_and_a_correction_are_told_apart_and_accepted():
         assert validate_reader_review(built[name])["decision"] == built[name]["decision"]
 
 
+@needs_node
+def test_a_polled_receipt_never_erases_what_the_extension_knows():
+    capture_js = (EXTENSION / "capture.js").as_posix()
+    script = f"""
+      import {{ mergeReceipt }} from "{capture_js}";
+      const row = {{receipt_id: "r1", state: "held", doi: "10.1/x", title: "T"}};
+      const fresh = {{state: "received", doi: null, detail: undefined, source_uid: "s1"}};
+      console.log(JSON.stringify(mergeReceipt(row, fresh)));
+    """
+    result = subprocess.run([NODE, "--input-type=module", "--eval", script],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "receipt_id": "r1", "state": "received", "doi": "10.1/x", "title": "T",
+        "source_uid": "s1",
+    }
+    for module in ("sidepanel.js", "service-worker.js"):
+        source = (EXTENSION / module).read_text(encoding="utf-8")
+        assert "mergeReceipt(" in source and "...fresh" not in source, module
+
+
 def test_finalize_carries_a_valid_review():
     body = validate_finalize({"attachments": [], "complete": True, "reader_review": _review()})
     assert body["reader_review"]["doi"] == "10.1056/nejmp2607831"

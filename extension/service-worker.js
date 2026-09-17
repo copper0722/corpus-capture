@@ -5,7 +5,7 @@
 // long after the window that submitted it has closed. This worker keeps asking,
 // updates the stored receipt, and marks the toolbar icon when something lands,
 // so reopening the side panel shows the outcome instead of a stale "sent".
-import { listReceipts, readReceipt, rememberReceipt } from "./capture.js";
+import { listReceipts, mergeReceipt, readReceipt, rememberReceipt } from "./capture.js";
 import { CAPTURE_REQUEST_KEY, openCaptureTab } from "./launch.js";
 
 const ALARM = "corpus-capture-poll";
@@ -28,7 +28,7 @@ async function poll() {
   for (const row of pending) {
     try {
       const fresh = await readReceipt(row.receipt_id);
-      await rememberReceipt({ ...row, ...fresh });
+      await rememberReceipt(mergeReceipt(row, fresh));
       if (SETTLED.has(fresh.state)) landed += 1;
     } catch (_) { /* keep the row; a failed poll says nothing about the capture */ }
   }

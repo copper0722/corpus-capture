@@ -671,6 +671,16 @@ export async function downloadFallback(capture, capturedAt, attachments = null) 
   return { stem, sidecar };
 }
 
+/**
+ * A polled receipt on top of the stored row. The receiver answers `null` for
+ * what it does not know yet (a DOI before the drain has run), and that must not
+ * erase what the extension already knows -- the reader-confirmed DOI above all.
+ */
+export function mergeReceipt(row, fresh) {
+  const known = Object.entries(fresh || {}).filter(([, value]) => value !== null && value !== undefined);
+  return { ...(row || {}), ...Object.fromEntries(known) };
+}
+
 export async function rememberReceipt(entry) {
   const stored = await chrome.storage.local.get([RECEIPTS_KEY]);
   const rows = Array.isArray(stored[RECEIPTS_KEY]) ? stored[RECEIPTS_KEY] : [];

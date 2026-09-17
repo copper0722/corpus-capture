@@ -13,6 +13,7 @@ import { safeReaderUrl } from "./net-policy.js";
 import {
   finalizeCapture,
   listReceipts,
+  mergeReceipt,
   normalizeDoi,
   profileForUrl,
   profileRegistry,
@@ -143,7 +144,7 @@ async function refreshReceipts() {
   const pending = rows.filter((row) => row.receipt_id && !SETTLED.has(row.state));
   for (const row of pending) {
     try {
-      await rememberReceipt({ ...row, ...(await readReceipt(row.receipt_id)) });
+      await rememberReceipt(mergeReceipt(row, await readReceipt(row.receipt_id)));
     } catch (_) { /* a failed poll says nothing about the capture */ }
   }
   rows = await listReceipts();
@@ -385,9 +386,15 @@ async function lookup(doi, { initial = false } = {}) {
     return;
   }
   const source = SOURCE_LABEL[identity.metadata_source] || identity.metadata_source || "接收端";
+  const note = {
+    in_progress: "接收端正在查詢這個 DOI；以下先列頁面宣告的資料，可稍後再按「用這個 DOI 重新查詢」。",
+    unavailable: "接收端未提供書目查詢；以下為頁面宣告的資料。",
+    error: "接收端查詢書目失敗；以下為頁面宣告的資料，可直接修正後確認。",
+    no_doi: "沒有 DOI 可查；以下為頁面宣告的資料。",
+  }[identity.metadata_status];
   status.textContent = identity.metadata
-    ? `已載入${source}的書目資料；與頁面不同處列在欄位下方。`
-    : "接收端沒有查到這個 DOI 的書目資料；以下為頁面宣告的資料。";
+    ? `已載入${source}；與頁面不同處列在欄位下方。`
+    : note || "接收端沒有查到這個 DOI 的書目資料；以下為頁面宣告的資料。";
 }
 
 function closeReview() {
@@ -578,7 +585,7 @@ async function resumeReview(entry) {
   }
   if (fresh.state !== "held") {
     await dropPending(entry.receipt_id);
-    await rememberReceipt({ receipt_id: entry.receipt_id, title: entry.title, url: entry.url, ...fresh });
+    await rememberReceipt(mergeReceipt({ receipt_id: entry.receipt_id, title: entry.title, url: entry.url }, fresh));
     await refreshReceipts();
     return;
   }
