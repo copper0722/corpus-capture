@@ -41,6 +41,21 @@ def test_every_endpoint_the_client_calls_is_documented_and_implemented(endpoint:
     assert endpoint in _receiver_source()
 
 
+@pytest.mark.parametrize("tail", ["/attachments", "/finalize"])
+def test_the_attachment_routes_agree_across_all_three(tail: str):
+    """The receipt-scoped routes are spelled with the id in the middle."""
+
+    assert f"/api/v1/intake/${{encodeURIComponent(receiptId)}}{tail}" in CAPTURE_JS
+    assert f"POST /api/v1/intake/{{receipt_id}}{tail}" in PROTOCOL
+    assert f'@app.post("/api/v1/intake/{{receipt_id}}{tail}"' in _receiver_source()
+
+
+def test_the_attachment_header_is_spelled_the_same_everywhere():
+    assert "x-corpus-attachment-meta" in CAPTURE_JS
+    assert "x-corpus-attachment-meta" in PROTOCOL
+    assert "x_corpus_attachment_meta" in _receiver_source()
+
+
 def test_the_receipt_route_agrees_across_all_three():
     assert "/api/v1/intake/${encodeURIComponent(receiptId)}" in CAPTURE_JS
     assert "GET /api/v1/intake/{receipt_id}" in PROTOCOL

@@ -1,0 +1,16 @@
+:root { color-scheme: light dark; --fg: #1f2328; --muted: #59636e; --ok: #1a7f37; --bad: #cf222e; --bg: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #e6edf3; --muted: #9198a1; --ok: #3fb950; --bad: #f85149; --bg: #0d1117; }
+}
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 system-ui, "PingFang TC", "Noto Sans TC", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.muted { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+#status { font-weight: 600; white-space: pre-line; }
+#rows { padding-left: 20px; }
+#rows li { margin: 4px 0; overflow-wrap: anywhere; }
+.captured, .duplicate { color: var(--ok); }
+.failed { color: var(--bad); }
+#result.ok { color: var(--ok); }
+#result.error { color: var(--bad); }
+button { font: inherit; padding: 6px 14px; }

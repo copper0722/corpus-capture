@@ -123,6 +123,41 @@ export function assetDecision(rawUrl, { pageUrl, profile } = {}) {
 }
 
 /**
+ * May this ATTACHMENT be fetched, and from where?
+ *
+ * The same shape as `assetDecision`, with one difference in the answer: an
+ * attachment on the page's own origin is fetched INSIDE the page, because a
+ * publisher's PDF and media links are hotlink-protected -- they want the tab's
+ * cookies AND its Referer, and only a fetch issued from the page carries both.
+ * An off-origin attachment (a video CDN a profile names) is fetched from the
+ * extension, anonymously: the whole reason to send cookies is an entitlement
+ * check, and there is no entitlement to check on somebody else's CDN.
+ */
+export function attachmentDecision(rawUrl, { pageUrl, profile } = {}) {
+  const page = parse(pageUrl);
+  const url = parse(rawUrl, pageUrl);
+  if (!url) return { allowed: false, reason: "unparsable_url" };
+  if (url.protocol !== "https:") return { allowed: false, url: url.href, reason: "insecure_scheme" };
+  if (url.username || url.password) {
+    return { allowed: false, url: url.href, reason: "credentials_in_url" };
+  }
+  if (isBlockedHost(url.hostname)) {
+    return { allowed: false, url: url.href, reason: "blocked_host" };
+  }
+  if (page && url.origin === page.origin) {
+    return { allowed: true, url: url.href, where: "page", credentials: "include", reason: "page_origin" };
+  }
+  const allowlist = [
+    ...((profile && profile.attachment_origins) || []),
+    ...((profile && profile.asset_origins) || []),
+  ];
+  if (allowlist.some((pattern) => hostMatches(url.hostname, pattern))) {
+    return { allowed: true, url: url.href, where: "extension", credentials: "omit", reason: "profile_origin" };
+  }
+  return { allowed: false, url: url.href, reason: "off_origin" };
+}
+
+/**
  * A link the popup is willing to put in front of the reader.
  *
  * `reader_url` arrives in receipt JSON from the configured receiver. A

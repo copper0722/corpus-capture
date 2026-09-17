@@ -131,6 +131,14 @@
         "asset_origins": {
           "$ref": "#/$defs/selectorList",
           "description": "Hosts other than the page's own origin that this publisher serves assets from. A leading `*.` matches the bare domain and any subdomain. Anything not the page origin and not on this list is never fetched; anything that is not the page origin is fetched without the reader's cookies."
+        },
+        "attachment_link_selectors": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Anchors the publisher uses for the article's downloadable files (PDF, supplements, audio, video) that the generic rules would not find. Discovery only; the network policy still decides what may be fetched."
+        },
+        "attachment_origins": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Hosts an ATTACHMENT may be fetched from anonymously when it is not on the page's origin, such as the publisher's video CDN. Never receives the reader's cookies."
         }
       }
     },
@@ -224,6 +232,14 @@
         "asset_origins": {
           "$ref": "#/$defs/selectorList",
           "description": "Hosts other than the page's own origin that this publisher serves assets from. A leading `*.` matches the bare domain and any subdomain. Anything not the page origin and not on this list is never fetched; anything that is not the page origin is fetched without the reader's cookies."
+        },
+        "attachment_link_selectors": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Anchors the publisher uses for the article's downloadable files (PDF, supplements, audio, video) that the generic rules would not find. Discovery only; the network policy still decides what may be fetched."
+        },
+        "attachment_origins": {
+          "$ref": "#/$defs/selectorList",
+          "description": "Hosts an ATTACHMENT may be fetched from anonymously when it is not on the page's origin, such as the publisher's video CDN. Never receives the reader's cookies."
         }
       },
       "allOf": [

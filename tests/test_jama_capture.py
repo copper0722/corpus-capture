@@ -1,5 +1,9 @@
 """Synthetic multi-widget JAMA DOM; no publisher text or live assets."""
-from corpus_capture.figure_manifest import build_figure_manifest, find_article_container, parse_markup
+from corpus_capture.figure_manifest import (
+    build_figure_manifest,
+    find_article_container,
+    parse_markup,
+)
 from corpus_capture.profiles import fixture_path, profile_for_url
 
 
@@ -20,7 +24,8 @@ def test_jama_body_and_display_items():
     # Actual lazy markup often has no src at all.
     for img in soup.select('img'):
         del img['src']
-    assert build_figure_manifest(str(soup), profile=profile, base_url='https://example.test/').labels == manifest.labels
+    rebuilt = build_figure_manifest(str(soup), profile=profile, base_url='https://example.test/')
+    assert rebuilt.labels == manifest.labels
 
 
 def test_abstract_is_not_a_full_article_container():

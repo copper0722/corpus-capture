@@ -117,7 +117,7 @@ def test_the_hash_is_computed_over_the_bytes_that_are_sent():
 def test_a_4xx_is_not_retried_through_the_offline_path():
     """Downloading a payload the receiver refused only moves the refusal."""
 
-    assert "if (error.status && error.status < 500) throw error;" in _read("popup.js")
+    assert "if (error.status && error.status < 500) throw error;" in _read("runner.js")
 
 
 def test_the_token_is_stored_where_it_does_not_sync():
@@ -154,7 +154,7 @@ def test_the_protocol_is_documented_where_it_can_travel():
 
     for expected in (
         "POST /api/v1/intake/html", "GET /api/v1/intake/{receipt_id}",
-        "GET /api/v1/capture/profiles", "corpus-capture-sidecar-v2",
+        "GET /api/v1/capture/profiles", SIDECAR_SCHEMA,
         "handoff.json",
     ):
         assert expected in protocol
@@ -203,7 +203,8 @@ def _node() -> str | None:
 
 @pytest.mark.skipif(_node() is None, reason="node is not installed on this host")
 @pytest.mark.parametrize("module", ["serialize.js", "capture.js", "popup.js",
-                                    "options.js", "service-worker.js"])
+                                    "options.js", "service-worker.js", "attachments.js",
+                                    "runner.js", "progress.js", "launch.js"])
 def test_every_module_parses(module: str):
     """A syntax error here is an extension that never loads and never says why.
 
@@ -249,3 +250,29 @@ def test_the_client_and_the_receiver_agree_on_the_download_name():
     when = datetime(2026, 9, 3, 9, 15, tzinfo=UTC)
     from_library = [download_basename(doi=doi, url=url, captured_at=when) for doi, url in cases]
     assert from_client == from_library
+
+
+def test_a_capture_runs_in_its_own_tab_not_in_the_popup():
+    """Chrome closes the popup on the first click elsewhere; an upload must survive that."""
+
+    popup = _read("popup.js")
+    assert "openCaptureTab" in popup
+    for moved in ("submitCapture", "uploadAttachment", "collectAttachments"):
+        assert moved not in popup, f"{moved} is running in the popup again"
+    assert "runCapture" in _read("progress.js")
+    assert 'progress.html?tab=' in _read("launch.js")
+
+
+def test_one_key_starts_a_capture():
+    manifest = json.loads(_read("manifest.json"))
+    command = manifest["commands"]["capture-current-tab"]
+    assert command["suggested_key"]["default"]
+    assert "capture-current-tab" in _read("service-worker.js")
+    assert "openCaptureTab" in _read("service-worker.js")
+
+
+def test_a_closing_progress_tab_closes_its_held_capture():
+    source = _read("progress.js")
+    assert "pagehide" in source and "keepalive: true" in source
+    assert "keepalive" in _read("capture.js")
+

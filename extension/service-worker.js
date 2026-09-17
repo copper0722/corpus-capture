@@ -6,6 +6,7 @@
 // updates the stored receipt, and marks the toolbar icon when something lands,
 // so reopening the popup shows the outcome instead of a stale "sent".
 import { listReceipts, readReceipt, rememberReceipt } from "./capture.js";
+import { openCaptureTab } from "./launch.js";
 
 const ALARM = "corpus-capture-poll";
 const SETTLED = new Set([
@@ -52,4 +53,21 @@ chrome.runtime.onMessage.addListener((message, _sender, respond) => {
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(ALARM, { periodInMinutes: 1 });
+});
+
+// The keyboard path: one key, no popup. The capture opens in its own tab beside
+// the article, exactly as the popup button does.
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command !== "capture-current-tab") return;
+  let target = tab;
+  if (!target) {
+    [target] = await chrome.tabs.query({ active: true, currentWindow: true });
+  }
+  try {
+    await openCaptureTab(target);
+    chrome.alarms.create(ALARM, { periodInMinutes: 1 });
+  } catch (_) {
+    await chrome.action.setBadgeBackgroundColor({ color: "#cf222e" });
+    await chrome.action.setBadgeText({ text: "!" });
+  }
 });

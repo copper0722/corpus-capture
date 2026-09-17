@@ -68,17 +68,22 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import unquote
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from corpus_capture import (
+    MAX_ATTACHMENT_BYTES,
     MAX_BODY_BYTES,
     SIDECAR_SCHEMA,
     ReceiptStore,
     SubmissionError,
+    attachment_payload_name,
     enforce_body_size,
     public_registry,
+    validate_attachment_meta,
+    validate_finalize,
     validate_submission,
 )
 
@@ -87,6 +92,9 @@ TOKEN = os.environ.get("CORPUS_CAPTURE_TOKEN", "")
 #: Envelopes the inbox may hold before this refuses to write another. A token
 #: holder can otherwise fill the disk one valid capture at a time.
 MAX_ENVELOPES = int(os.environ.get("CORPUS_CAPTURE_MAX_ENVELOPES", "10000"))
+#: How long a capture may stay held for its attachments before it is published
+#: with whatever arrived. A popup closed halfway must not strand the page.
+HOLD_SECONDS = int(os.environ.get("CORPUS_CAPTURE_HOLD_SECONDS", str(3600)))
 
 app = FastAPI(title="corpus-capture reference receiver")
 # The extension's Origin is `chrome-extension://...`, which can never satisfy a
@@ -195,6 +203,17 @@ async def intake(
     (staging / f"{stem}.html").write_bytes(body)
     (staging / f"{stem}.json").write_text(json.dumps(sidecar, indent=1), encoding="utf-8")
     (staging / "handoff.json").write_text(json.dumps(handoff, indent=1), encoding="utf-8")
+    if submission["hold_attachments"]:
+        # Held: the attachments follow, and `finalize` (or the sweep) publishes.
+        # The dot-prefixed staging directory is what keeps a watcher from seeing
+        # the page without them.
+        receipt_id = RECEIPTS.put({
+            "state": "held", "payload_sha256": actual, "doi": submission["doi"],
+            "staging": str(staging), "handoff_id": handoff_id, "stem": stem,
+            "sidecar": sidecar, "attachments": [], "received_at": received_at.isoformat(),
+        })
+        return {"receipt_id": receipt_id, "state": "held",
+                "payload_sha256": actual, "doi": submission["doi"]}
     # One rename. A watcher either sees a complete envelope or sees nothing.
     os.replace(staging, INBOX / handoff_id)
 
@@ -237,6 +256,134 @@ def uuid_hex() -> str:
     import uuid
 
     return uuid.uuid4().hex
+
+
+def _held(receipt_id: str) -> dict[str, Any]:
+    record = RECEIPTS.get(receipt_id)
+    if not record or record.get("state") != "held":
+        raise HTTPException(status_code=409, detail="capture_not_held")
+    if not Path(record["staging"]).is_dir():
+        raise HTTPException(status_code=410, detail="hold_expired")
+    return record
+
+
+@app.post("/api/v1/intake/{receipt_id}/attachments", status_code=202)
+async def intake_attachment(
+    receipt_id: str,
+    request: Request,
+    x_corpus_service_token: Annotated[str | None, Header()] = None,
+    x_corpus_attachment_meta: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    _authenticate(x_corpus_service_token)
+    record = _held(receipt_id)
+    try:
+        meta = validate_attachment_meta(json.loads(unquote(x_corpus_attachment_meta or "")))
+        enforce_body_size(request.headers.get("content-length"), limit=MAX_ATTACHMENT_BYTES)
+    except (SubmissionError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=getattr(error, "code", "attachment_meta_malformed")) from error
+
+    # Streamed to disk beside the page, hashed as it arrives, capped as it is
+    # read. The declared length was a claim; this is the measurement.
+    staging = Path(record["staging"])
+    name = attachment_payload_name(record["stem"], meta["index"], meta["kind"], meta["ext"])
+    part = staging / f".{name}.part"
+    digest = hashlib.sha256()
+    total = 0
+    with part.open("wb") as handle:
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > MAX_ATTACHMENT_BYTES:
+                part.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail="payload_too_large")
+            digest.update(chunk)
+            handle.write(chunk)
+    if total != meta["bytes"] or digest.hexdigest() != meta["sha256"]:
+        part.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="sha256_mismatch")
+    os.replace(part, staging / name)
+    stored = {**meta, "payload_name": name, "status": "captured"}
+    record["attachments"] = [row for row in record["attachments"] if row["index"] != meta["index"]] + [stored]
+    RECEIPTS.update(receipt_id, attachments=record["attachments"])
+    return {"receipt_id": receipt_id, "state": "held", "attachment": {
+        "index": name and meta["index"], "kind": meta["kind"], "payload_name": name,
+        "sha256": meta["sha256"], "bytes": total, "mime": meta["mime"],
+    }}
+
+
+def _publish_held(receipt_id: str, record: dict[str, Any], declared: list[dict[str, Any]],
+                  *, complete: bool, discovered: int, reason: str | None = None) -> dict[str, Any]:
+    # The receiver's own ledger decides what was captured. A row the producer
+    # calls captured that never arrived is a gap, recorded as one.
+    stored = {row["index"]: row for row in record["attachments"]}
+    manifest: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for row in declared:
+        index = row.get("index")
+        seen.add(index)
+        if index in stored:
+            got = stored[index]
+            manifest.append({"index": index, "kind": got["kind"], "url": got["url"], "label": got["label"],
+                             "source": got["source"], "status": "captured", "payload_name": got["payload_name"],
+                             "sha256": got["sha256"], "bytes": got["bytes"], "mime": got["mime"]})
+        elif row.get("status") == "captured":
+            manifest.append({**{k: row[k] for k in ("index", "kind", "url", "label", "source") if k in row},
+                             "status": "failed", "reason": "not_uploaded"})
+        else:
+            manifest.append(row)
+    for index, got in sorted(stored.items()):
+        if index not in seen:
+            manifest.append({"index": index, "kind": got["kind"], "url": got["url"], "label": got["label"],
+                             "source": got["source"], "status": "captured", "payload_name": got["payload_name"],
+                             "sha256": got["sha256"], "bytes": got["bytes"], "mime": got["mime"]})
+    staging = Path(record["staging"])
+    sidecar = dict(record["sidecar"])
+    sidecar["attachments"] = manifest
+    sidecar["attachments_discovered"] = max(discovered, len(manifest))
+    sidecar["attachments_complete"] = complete and all(row["status"] == "captured" for row in manifest)
+    if reason:
+        sidecar["attachments_finalized_by"] = reason
+    (staging / f"{record['stem']}.json").write_text(json.dumps(sidecar, indent=1), encoding="utf-8")
+    os.replace(staging, INBOX / record["handoff_id"])
+    RECEIPTS.update(receipt_id, state="received", staging=None)
+    return {"receipt_id": receipt_id, "state": "received",
+            "payload_sha256": record["payload_sha256"], "doi": record.get("doi")}
+
+
+@app.post("/api/v1/intake/{receipt_id}/finalize", status_code=202)
+async def intake_finalize(
+    receipt_id: str,
+    request: Request,
+    x_corpus_service_token: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    _authenticate(x_corpus_service_token)
+    record = _held(receipt_id)
+    try:
+        enforce_body_size(request.headers.get("content-length"), limit=1024 * 1024)
+        body = validate_finalize(json.loads(await _read_bounded(request, 1024 * 1024)))
+    except (SubmissionError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=getattr(error, "code", "body_not_json")) from error
+    return _publish_held(receipt_id, record, body["attachments"],
+                         complete=body["complete"], discovered=body["discovered"])
+
+
+def sweep_holds(now: float | None = None) -> int:
+    """Publish every hold older than HOLD_SECONDS with whatever arrived.
+
+    Call it from a scheduler. A popup closed halfway must lose only the
+    attachments it never sent, not the page.
+    """
+
+    published = 0
+    for receipt_id, record in list(RECEIPTS.items()):
+        if record.get("state") != "held":
+            continue
+        born = datetime.fromisoformat(record["received_at"]).timestamp()
+        if (now or datetime.now(UTC).timestamp()) - born < HOLD_SECONDS:
+            continue
+        _publish_held(receipt_id, record, [], complete=False,
+                      discovered=len(record["attachments"]), reason="stale_hold_sweep")
+        published += 1
+    return published
 ```
 
 ## What a real receiver adds

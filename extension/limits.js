@@ -44,4 +44,20 @@ export const LIMITS = {
   maxAuthors: 100,
   //: How long one asset may take before the capture moves on without it.
   assetTimeoutMs: 20000,
+  //: Attachments the article links to: its PDF, the supplementary files, the
+  //: audio interview, the embedded video. Discovered from page-controlled
+  //: markup, so the count is a ceiling on authenticated requests just as
+  //: maxAssets is; the byte ceilings are what stops one link from being a
+  //: stream that never ends. An attachment past its ceiling is recorded as a
+  //: gap with a reason, never truncated into a file that looks complete.
+  maxAttachments: 40,
+  maxAttachmentBytes: 256 * 1024 * 1024,
+  maxAttachmentTotalBytes: 768 * 1024 * 1024,
+  //: One attachment. Ten minutes because a 70 MB podcast through a publisher's
+  //: hotlink-protected media path is a real case, measured, not a guess.
+  attachmentTimeoutMs: 600000,
+  //: How the bytes cross from the page's isolated world into the extension.
+  //: Base64 through executeScript, so a chunk is bounded by what one script
+  //: result may carry rather than by the attachment's size.
+  attachmentChunkBytes: 4 * 1024 * 1024,
 };

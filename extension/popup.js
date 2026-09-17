@@ -2,18 +2,17 @@
 
 import { safeReaderUrl } from "./net-policy.js";
 import {
-  capturePage,
+  listReceipts,
   profileForUrl,
   profileRegistry,
-  downloadFallback,
-  listReceipts,
   readReceipt,
   rememberReceipt,
   settings,
-  submitCapture,
 } from "./capture.js";
+import { openCaptureTab } from "./launch.js";
 
 const STATE_LABEL = {
+  held: "正文已收下，附件上傳中",
   received: "已收下，等排程入庫",
   queued: "已排入佇列",
   claimed: "處理中",
@@ -60,6 +59,7 @@ function render(rows) {
     const state = document.createElement("div");
     state.className = "state";
     state.textContent = STATE_LABEL[row.state] || row.state;
+    if (row.attachments_summary) state.textContent += `｜${row.attachments_summary}`;
     item.append(title, state);
     const reader = safeReaderUrl(row.reader_url, apiOrigin);
     if (reader) {
@@ -108,51 +108,12 @@ async function refresh() {
 
 async function run() {
   button.disabled = true;
-  const capturedAt = new Date();
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !/^https?:/.test(tab.url || "")) throw new Error("需要一個 http(s) 文章分頁");
-    say("擷取頁面中…");
-    const capture = await capturePage(tab.id, (done, total) => {
-      say(`內嵌圖片與樣式 ${done}/${total}…`);
-    }, activeProfile);
-    const figureNames = (capture.figures || []).map((figure) => figure.label).join("、");
-    say(
-      `已打包 ${(capture.html.length / 1024 / 1024).toFixed(1)} MB`
-      + `，文章圖表 ${(capture.figures || []).length}${figureNames ? `（${figureNames}）` : ""}`
-      + `，其餘 ${(capture.decorative || []).length} 張標為裝飾`
-      + `${capture.images.refused ? `，拒抓 ${capture.images.refused} 個外部資源` : ""}`
-      + "，送出中…"
-    );
-    try {
-      const receipt = await submitCapture(capture, capturedAt);
-      await rememberReceipt({
-        receipt_id: receipt.receipt_id,
-        state: receipt.state || "received",
-        title: capture.title,
-        url: capture.url,
-        doi: capture.doi,
-        captured_at: capturedAt.toISOString(),
-      });
-      say(`收據 ${receipt.receipt_id}\n等待入庫…`, "ok");
-    } catch (error) {
-      // A 4xx is the server refusing this payload; downloading it would only
-      // move the same refusal to the drain. Only a transport failure earns the
-      // offline path.
-      if (error.status && error.status < 500) throw error;
-      const { stem } = await downloadFallback(capture, capturedAt);
-      await rememberReceipt({
-        receipt_id: null,
-        state: "downloaded",
-        title: capture.title,
-        url: capture.url,
-        doi: capture.doi,
-        captured_at: capturedAt.toISOString(),
-        download_stem: stem,
-      });
-      say(`API 連不上（${error.message}）。已存 Downloads/corpus-capture/${stem}.html 與同名 .json，等 inbox 拉取。`, "ok");
-    }
-    await chrome.runtime.sendMessage({ type: "corpus-capture-watch" }).catch(() => {});
+    // The capture runs in its own tab: this popup closes the moment the reader
+    // clicks anywhere else, and an attachment upload must not close with it.
+    await openCaptureTab(tab);
+    say("已在旁邊的分頁開始存入（含 PDF、附錄、音訊、影片）。可以繼續閱讀；完成後這裡會列出收據。", "ok");
   } catch (error) {
     say(`失敗：${error.message || error}`, "error");
   } finally {
@@ -201,6 +162,6 @@ document.querySelector("#options").addEventListener("click", (event) => {
 
 showProfile();
 refresh().then(() => {
-  say("按「存入 corpus」把目前這頁存進 corpus。");
+  say("按「存入 corpus」（或 Alt+Shift+S；Mac 為 Control+Shift+S）把目前這頁連同 PDF、附錄、音訊與影片存進 corpus。");
   pollTimer = setInterval(refresh, 5000);
 });

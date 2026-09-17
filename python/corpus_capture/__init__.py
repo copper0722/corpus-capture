@@ -28,17 +28,27 @@ from corpus_capture.profiles import (
 )
 from corpus_capture.sidecar import (
     ACCESS_CLASSES,
+    ATTACHMENT_KINDS,
+    ATTACHMENT_STATUSES,
+    ATTACHMENT_SUFFIXES,
+    MAX_ATTACHMENT_BYTES,
+    MAX_ATTACHMENTS,
     PRODUCER_KEY,
     SIDECAR_SCHEMA,
     SIDECAR_SCHEMAS_ACCEPTED,
     SidecarError,
+    attachment_payload_name,
     capture_slug,
     download_basename,
     normalize_doi,
+    validate_attachment_row,
+    validate_attachments,
     validate_sidecar,
 )
 from corpus_capture.submission import (
     ALLOWED_FIELDS,
+    ATTACHMENT_META_FIELDS,
+    FINALIZE_FIELDS,
     FORBIDDEN_FIELDS,
     MAX_BODY_BYTES,
     MAX_HTML_BYTES,
@@ -46,15 +56,24 @@ from corpus_capture.submission import (
     ReceiptStore,
     SubmissionError,
     enforce_body_size,
+    validate_attachment_meta,
+    validate_finalize,
     validate_submission,
 )
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 __all__ = [
     "ACCESS_CLASSES",
     "ALLOWED_FIELDS",
+    "ATTACHMENT_KINDS",
+    "ATTACHMENT_META_FIELDS",
+    "ATTACHMENT_STATUSES",
+    "ATTACHMENT_SUFFIXES",
+    "FINALIZE_FIELDS",
     "FORBIDDEN_FIELDS",
+    "MAX_ATTACHMENTS",
+    "MAX_ATTACHMENT_BYTES",
     "MAX_BODY_BYTES",
     "MAX_HTML_BYTES",
     "MAX_METADATA_BYTES",
@@ -70,6 +89,7 @@ __all__ = [
     "SidecarError",
     "SubmissionError",
     "__version__",
+    "attachment_payload_name",
     "build_figure_manifest",
     "capture_slug",
     "download_basename",
@@ -83,6 +103,10 @@ __all__ = [
     "profile_for_url",
     "profile_status_table",
     "public_registry",
+    "validate_attachment_meta",
+    "validate_attachment_row",
+    "validate_attachments",
+    "validate_finalize",
     "validate_registry",
     "validate_sidecar",
     "validate_submission",

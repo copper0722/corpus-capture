@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Corpus Capture",
-  "version": "1.1.0",
-  "description": "把目前這篇文章頁（含圖片）打包成自含 HTML，一鍵存入 corpus。",
+  "version": "1.2.0",
+  "description": "把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle。",
   "permissions": [
     "activeTab",
     "scripting",
@@ -24,5 +24,14 @@
   "options_page": "options.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"
+  },
+  "commands": {
+    "capture-current-tab": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "MacCtrl+Shift+S"
+      },
+      "description": "把目前這篇文章連同 PDF、附錄、音訊與影片存入 corpus"
+    }
   }
 }

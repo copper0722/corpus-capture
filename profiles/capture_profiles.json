@@ -87,7 +87,14 @@
       "/cover"
     ],
     "asset_origins": [],
-    "unnumbered_asset_patterns": []
+    "unnumbered_asset_patterns": [],
+    "attachment_link_selectors": [],
+    "attachment_origins": [
+      "cdn.jwplayer.com",
+      "*.jwplatform.com",
+      "*.jwpsrv.com",
+      "*.jwpcdn.com"
+    ]
   },
   "profiles": [
     {
@@ -141,10 +148,21 @@
       ],
       "status": "supported",
       "fixture": "fixtures/capture-profiles/nejm.html",
-      "notes": "Case Challenge pages publish no citation_* bibliography at all: og:* plus a proprietary pbContext string. Figure labels come from the figure id (t1/f1) and the img alt (Table1/Figure1), which carry no space before the number.",
+      "notes": "Case Challenge pages publish no citation_* bibliography at all: og:* plus a proprietary pbContext string. Figure labels come from the figure id (t1/f1) and the img alt (Table1/Figure1), which carry no space before the number. Attachments: the downloadable audio interview is a /cms/asset/.../media/*.mp3 anchor (hotlink-protected, fetched from the page); supplementary files live under /doi/suppl/; Quick Take / Double Take video cards carry data-ajaxurl and resolve to a JW Platform mp4.",
       "asset_origins": [
         "*.nejm.org",
         "csvc.nejm.org"
+      ],
+      "attachment_link_selectors": [
+        "a[href*='/cms/asset/'][href*='.mp3']",
+        "a[href*='/doi/suppl/']",
+        "a[href*='/doi/pdf/']"
+      ],
+      "attachment_origins": [
+        "cdn.jwplayer.com",
+        "*.jwplatform.com",
+        "*.jwpsrv.com",
+        "*.jwpcdn.com"
       ]
     },
     {

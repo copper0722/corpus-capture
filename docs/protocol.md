@@ -67,12 +67,108 @@ Response `202`:
 `202`, not `201`: the bytes are durably received and the artifact does not exist
 yet. Reporting `201` would name a resource the caller cannot fetch.
 
+### Holding a capture for its attachments
+
+`hold_attachments: true` in the body asks the receiver NOT to publish the
+envelope yet. The receiver stages it, answers `202` with `state: "held"`, and
+waits for the attachment uploads and the finalize call below. A held envelope
+is invisible to whatever ingests the inbox, so a bundle is never built from
+the page alone while the reader's browser is still uploading its PDF.
+
+A hold is not forever. A receiver publishes a held envelope on its own after a
+bounded time (the reference receiver: one hour) with whatever attachments
+arrived and `attachments_complete: false`. The extension runs a capture in its
+own tab, not in the toolbar popup, and a tab closed mid-run sends the finalize
+below with `keepalive` and the rows it has; the timeout is the backstop for a
+browser that went away entirely.
+
+## `POST /api/v1/intake/{receipt_id}/attachments`
+
+One attachment's bytes, raw, for a held capture. The body IS the file; the
+description travels in one header so a 200 MB video is not wrapped in a JSON
+string with a base64 copy of itself:
+
+```
+Content-Type: application/octet-stream
+x-corpus-attachment-meta: <percent-encoded JSON>
+```
+
+```json
+{
+  "index": 3,
+  "kind": "audio | pdf | supplement | video | other",
+  "url": "https://example.org/cms/asset/…/interview.mp3",
+  "final_url": "https://example.org/…",
+  "label": "Download audio",
+  "source": "anchor | citation_pdf_url | audio_element | jwplayer | nejm_do | profile:<selector>",
+  "sha256": "<sha-256 of the body>",
+  "bytes": 61234567,
+  "mime": "audio/mpeg",
+  "ext": ".mp3",
+  "media_id": "AbCd1234",
+  "nejmdo": "10.1056/NEJMdo000123"
+}
+```
+
+`sha256` and `bytes` are claims about the body. The receiver caps what it
+reads, hashes what it read, and refuses a mismatch with `4xx`. It chooses the
+stored name itself — `<capture stem>--NN-<kind><ext>` — and answers:
+
+```json
+{ "receipt_id": "<uuid>", "state": "held",
+  "attachment": { "index": 3, "kind": "audio", "payload_name": "…--03-audio.mp3",
+                  "sha256": "…", "bytes": 61234567, "mime": "audio/mpeg" } }
+```
+
+The producer fetched the bytes with the reader's own session, from inside the
+page, because a publisher's PDF and media links want the tab's cookies AND its
+Referer. It fetched them only from the page's origin, or from an origin the
+publisher profile names for anonymous video (`attachment_origins`); nothing a
+page can link reaches a private host. And it looked at the bytes before sending
+them: a login page answered with status 200 to a PDF request is recorded as a
+gap (`html_instead_of_pdf`), never uploaded as the PDF.
+
+## `POST /api/v1/intake/{receipt_id}/finalize`
+
+Closes a held capture and publishes the envelope.
+
+```json
+{
+  "attachments": [
+    { "index": 1, "kind": "pdf", "url": "…", "label": "PDF", "source": "citation_pdf_url",
+      "status": "captured", "payload_name": "…--01-pdf.pdf", "sha256": "…",
+      "bytes": 812345, "mime": "application/pdf" },
+    { "index": 2, "kind": "video", "url": "…/master.m3u8", "label": "Watch",
+      "source": "anchor", "status": "failed", "reason": "hls_not_supported" }
+  ],
+  "complete": false,
+  "discovered": 2,
+  "overflow": 0
+}
+```
+
+The manifest names every candidate the page offered: `captured` with the hash
+and stored name, `duplicate` with `duplicate_of` (the index of the captured row
+holding the same bytes -- the PDF behind `citation_pdf_url` and behind a
+`?download=true` link, one video behind two players), or `failed` with a reason
+(`http_403`, `too_large`, `html_instead_of_pdf`, `off_origin`,
+`hls_not_supported`, `not_a_video`, …). A duplicate is complete, never a gap,
+and its bytes are fetched and stored once.
+The receiver trusts only its own ledger for what was captured — a row the
+producer calls `captured` that the receiver never received is recorded as
+`failed: not_uploaded` — and writes the merged manifest into the sidecar as
+`attachments`, with `attachments_complete` and `attachments_discovered`. Answers
+`202` with the ordinary receipt, `state: "received"`.
+
+A bundle built from the envelope therefore records which files it holds and
+which it does not, instead of looking complete because nothing says otherwise.
+
 ## `GET /api/v1/intake/{receipt_id}`
 
 ```json
 {
   "receipt_id": "<uuid>",
-  "state": "received | queued | claimed | admitted | duplicate | error | …",
+  "state": "held | received | queued | claimed | admitted | duplicate | error | …",
   "source_uid": "…",
   "bundle_id": "…",
   "reader_url": "https://…",
@@ -101,10 +197,17 @@ The reference receiver publishes each capture as one directory:
 
 ```
 <inbox>/corpus-capture/<handoff_id>/
-    handoff.json      transport manifest: hashes, sizes, times, producer key
-    <slug>.html       the payload
-    <slug>.json       the sidecar: what the page declared
+    handoff.json                transport manifest: hashes, sizes, times, producer key
+    <slug>.html                 the payload
+    <slug>.json                 the sidecar: what the page declared, and the attachment manifest
+    <slug>--01-pdf.pdf          the attachments the sidecar lists, one file each
+    <slug>--02-supplement.pdf
+    <slug>--03-audio.mp3
 ```
+
+An attachment is admissible only through the sidecar that lists it with its
+hash: a `.pdf` beside a capture that no sidecar names is a stray download,
+and a receiver's ingest must treat it as one rather than as this article's.
 
 `handoff.json` refuses `source_uid`, `doi`, `bundle_path`, `tags` and `rights` —
 identity and rights are not the producer's to assert. It is written to a staging
@@ -141,14 +244,14 @@ reach the network, navigate, or borrow the reader's session. The extension's own
 `content_security_policy` governs extension pages only and has no authority over
 a file a receiver serves.
 
-## Sidecar — `corpus-capture-sidecar-v2`
+## Sidecar — `corpus-capture-sidecar-v3`
 
 The one document both the online and the offline path emit, so a receiver has a
 single rule to implement:
 
 | field | meaning |
 |---|---|
-| `schema` | `corpus-capture-sidecar-v2` (v1 omits everything below `access`) |
+| `schema` | `corpus-capture-sidecar-v3` (v2 says nothing about attachments; v1 omits everything below `access`) |
 | `url` / `final_url` | canonical and actual page address |
 | `doi` | what the page declared, normalized; never derived from a filename |
 | `title`, `date_published` | as declared |
@@ -160,6 +263,8 @@ single rule to implement:
 | `access` | what the reader's session saw |
 | `meta_sha256` | hash of the normalized meta block |
 | `profile`, `figures` | which profile ran, and the article's figure manifest |
+| `attachments` | the attachment manifest: every linked file, `captured` (with `payload_name`, `sha256`, `bytes`, `mime`), `duplicate` (with `duplicate_of`) or `failed` (with `reason`) |
+| `attachments_discovered`, `attachments_complete` | how many the page linked, and whether every one was captured |
 
 A sidecar that does not name its payload is ignored. Without that check, a
 leftover `.json` lends its DOI to whatever file later takes the same stem.
@@ -172,6 +277,9 @@ which is the entire reason this lane exists.
 ## Offline path
 
 When the endpoint is unreachable the extension writes both files to the
-browser's download directory under `corpus-capture/`, with the same stem. A
-receiver that watches that directory admits the `.html` only when the sidecar is
-beside it: a name is not evidence.
+browser's download directory under `corpus-capture/`, with the same stem, and
+each captured attachment beside them as `<stem>--NN-<kind><ext>` — the same
+name a receiver would have chosen, because here there is no receiver to choose
+it. A receiver that watches that directory admits the `.html` only when the
+sidecar is beside it, and an attachment only when that sidecar lists it with
+its hash: a name is not evidence.

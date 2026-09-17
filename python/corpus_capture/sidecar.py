@@ -36,7 +36,7 @@ takes the same stem.
 Public entrypoints
 ------------------
 ``normalize_doi()``, ``capture_slug()``, ``download_basename()``,
-``validate_sidecar()``.
+``attachment_payload_name()``, ``validate_attachments()``, ``validate_sidecar()``.
 
 Related tests
 -------------
@@ -50,10 +50,40 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-#: The current sidecar schema. v1 is still accepted: it omits everything from
-#: ``access`` onward, and bytes captured by an older producer are still bytes.
-SIDECAR_SCHEMA = "corpus-capture-sidecar-v2"
-SIDECAR_SCHEMAS_ACCEPTED = ("corpus-capture-sidecar-v1", "corpus-capture-sidecar-v2")
+#: The current sidecar schema. v3 adds the attachment manifest: every file the
+#: page linked -- its PDF, supplements, audio, video -- captured with its hash
+#: and stored name, or failed with a reason. v1 and v2 are still accepted: v1
+#: omits everything from ``access`` onward, v2 says nothing about attachments,
+#: and bytes captured by an older producer are still bytes.
+SIDECAR_SCHEMA = "corpus-capture-sidecar-v3"
+SIDECAR_SCHEMAS_ACCEPTED = (
+    "corpus-capture-sidecar-v1", "corpus-capture-sidecar-v2", "corpus-capture-sidecar-v3",
+)
+#: What an attachment is, as a receiver files it. ``other`` is a download the
+#: page offered that fits none of the four; it is kept and labelled, and never
+#: mistaken for the article's PDF.
+ATTACHMENT_KINDS = ("pdf", "supplement", "audio", "video", "other")
+#: ``duplicate`` is a candidate whose bytes another row already holds (the same
+#: PDF behind two links, one video behind two players): complete, stored once.
+ATTACHMENT_STATUSES = ("captured", "duplicate", "failed")
+#: Stored suffixes a receiver accepts. Anything else is stored as ``.bin`` with
+#: its MIME type recorded, so an odd suffix is kept rather than refused.
+ATTACHMENT_SUFFIXES = frozenset({
+    ".pdf", ".mp3", ".m4a", ".wav", ".ogg", ".mp4", ".webm", ".mov", ".m4v", ".ts",
+    ".zip", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".tsv", ".txt",
+    ".json", ".xml", ".rtf", ".png", ".jpg", ".tif", ".epub", ".bin",
+})
+#: Attachments one capture may declare. The same ceiling the extension applies.
+MAX_ATTACHMENTS = 40
+#: One attachment's bytes. The receiver caps what it reads, not only what is declared.
+MAX_ATTACHMENT_BYTES = 256 * 1024 * 1024
+#: Fields an attachment manifest row may carry. Unknown keys fail closed, for
+#: the same reason a submission's do: an extra key is a producer talking to a
+#: different receiver.
+ATTACHMENT_ROW_FIELDS = frozenset({
+    "index", "kind", "url", "label", "source", "status", "payload_name", "sha256",
+    "bytes", "mime", "final_url", "reason", "media_id", "nejmdo", "duplicate_of",
+})
 #: What the reader's session saw. An observation, never a licence: only
 #: ``login_required`` is evidence, and it is evidence that the article is NOT
 #: open. A page that merely rendered proves nothing, because the browser may
@@ -72,6 +102,7 @@ _DOI_URL_TAIL_RE = re.compile(
 )
 _SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_PAYLOAD_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 
 
 class SidecarError(ValueError):
@@ -145,6 +176,111 @@ def download_basename(*, doi: str | None, url: str, captured_at: datetime) -> st
     return f"{capture_slug(doi=doi, url=url)}-{stamp}"
 
 
+def attachment_payload_name(stem: str, index: int, kind: str, suffix: str | None) -> str:
+    """The name an attachment is stored under, beside the capture that owns it.
+
+    ``<stem>--NN-<kind><suffix>``. The double dash cannot occur in a capture
+    stem -- the slug allows one dash at a time -- so a receiver can tell an
+    attachment from a capture by name alone, and still never trusts the name
+    for identity: the sidecar lists each attachment with its hash. Identical on
+    both sides (``attachmentPayloadName`` in the extension) because the offline
+    path has no receiver to choose the name.
+    """
+
+    safe_kind = kind if kind in ATTACHMENT_KINDS else "other"
+    text = str(suffix or "").lower()
+    safe_suffix = text if text in ATTACHMENT_SUFFIXES else ".bin"
+    return f"{stem}--{int(index):02d}-{safe_kind}{safe_suffix}"
+
+
+def validate_attachment_row(row: Any, *, position: int = 0) -> dict[str, Any]:
+    """Check one attachment manifest row, or raise. Returns it unchanged.
+
+    A ``captured`` row must name its payload and its hash; a ``failed`` row must
+    say why. Neither may carry a path: the payload name is a basename beside the
+    capture, and a name with a separator in it is a producer that is not the
+    extension.
+    """
+
+    where = f"attachments[{position}]"
+    if not isinstance(row, dict):
+        raise SidecarError("attachment_not_an_object", where)
+    unknown = set(row) - ATTACHMENT_ROW_FIELDS
+    if unknown:
+        raise SidecarError("attachment_field_unknown", ", ".join(sorted(unknown)))
+    kind = row.get("kind")
+    if kind not in ATTACHMENT_KINDS:
+        raise SidecarError("attachment_kind_unknown", str(kind)[:40])
+    status = row.get("status")
+    if status not in ATTACHMENT_STATUSES:
+        raise SidecarError("attachment_status_unknown", str(status)[:40])
+    url = row.get("url")
+    if not isinstance(url, str) or urlsplit(url).scheme not in ("http", "https"):
+        raise SidecarError("attachment_url_invalid", where)
+    if len(url) > 2048:
+        raise SidecarError("attachment_url_too_long", where)
+    for key in ("label", "source", "reason", "mime", "final_url", "media_id", "nejmdo",
+                "payload_name"):
+        value = row.get(key)
+        if value is not None and (not isinstance(value, str) or len(value) > 2048):
+            raise SidecarError("attachment_field_malformed", key)
+    index = row.get("index")
+    if index is not None and (not isinstance(index, int) or isinstance(index, bool) or index < 1):
+        raise SidecarError("attachment_index_malformed", where)
+    size = row.get("bytes")
+    if size is not None and (not isinstance(size, int) or isinstance(size, bool) or size < 0):
+        raise SidecarError("attachment_bytes_malformed", where)
+    if status == "captured":
+        name = str(row.get("payload_name") or "")
+        if (
+            not _PAYLOAD_NAME_RE.fullmatch(name) or "/" in name or "\\" in name
+            or name in {".", ".."}
+        ):
+            raise SidecarError("attachment_payload_name_invalid", where)
+        if not _SHA256_RE.fullmatch(str(row.get("sha256") or "").lower()):
+            raise SidecarError("attachment_hash_malformed", where)
+        if not isinstance(size, int) or size <= 0 or size > MAX_ATTACHMENT_BYTES:
+            raise SidecarError("attachment_bytes_malformed", where)
+    elif status == "duplicate":
+        target = row.get("duplicate_of")
+        if not isinstance(target, int) or isinstance(target, bool) or target < 1:
+            raise SidecarError("attachment_duplicate_without_target", where)
+        if target == index:
+            raise SidecarError("attachment_duplicate_of_itself", where)
+        digest = row.get("sha256")
+        if digest is not None and not _SHA256_RE.fullmatch(str(digest).lower()):
+            raise SidecarError("attachment_hash_malformed", where)
+    elif not str(row.get("reason") or "").strip():
+        raise SidecarError("attachment_failed_without_reason", where)
+    return row
+
+
+def validate_attachments(rows: Any) -> list[dict[str, Any]]:
+    """Check an attachment manifest, or raise. Returns it unchanged."""
+
+    if not isinstance(rows, list):
+        raise SidecarError("attachments_not_a_list")
+    if len(rows) > MAX_ATTACHMENTS:
+        raise SidecarError("attachments_too_many", str(len(rows)))
+    names: set[str] = set()
+    captured: set[int] = set()
+    for position, row in enumerate(rows):
+        validate_attachment_row(row, position=position)
+        name = row.get("payload_name")
+        if row.get("status") == "captured":
+            if name in names:
+                raise SidecarError("attachment_payload_name_duplicate", str(name))
+            names.add(name)
+            if isinstance(row.get("index"), int):
+                captured.add(row["index"])
+    for position, row in enumerate(rows):
+        # A duplicate points at a row that holds the bytes, or it points at
+        # nothing and the file it stood for is simply not in the bundle.
+        if row.get("status") == "duplicate" and row["duplicate_of"] not in captured:
+            raise SidecarError("attachment_duplicate_target_missing", f"attachments[{position}]")
+    return rows
+
+
 def validate_sidecar(payload: Any, *, payload_name: str | None = None) -> dict[str, Any]:
     """Check a sidecar against the contract, or raise. Returns it unchanged.
 
@@ -173,4 +309,21 @@ def validate_sidecar(payload: Any, *, payload_name: str | None = None) -> dict[s
     access = payload.get("access", "unknown")
     if access not in ACCESS_CLASSES:
         raise SidecarError("sidecar_access_unknown", str(access))
+    if "attachments" in payload:
+        rows = validate_attachments(payload["attachments"])
+        # An attachment may not be the payload itself, and may not be named
+        # twice under two roles.
+        if payload_name is not None and any(
+            row.get("payload_name") == payload_name for row in rows
+        ):
+            raise SidecarError("attachment_is_the_payload")
+    for key in ("attachments_complete",):
+        if key in payload and not isinstance(payload[key], bool):
+            raise SidecarError("sidecar_field_malformed", key)
+    for key in ("attachments_discovered",):
+        value = payload.get(key)
+        if value is not None and (
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+        ):
+            raise SidecarError("sidecar_field_malformed", key)
     return payload

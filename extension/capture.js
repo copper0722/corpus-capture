@@ -4,6 +4,7 @@ import { LIMITS } from "./limits.js";
 import { assetDecision, hostMatches, sameOrigin } from "./net-policy.js";
 import { sanitizeCss, sanitizeDocument, serializeDocument } from "./sanitize.js";
 import { serializePage } from "./serialize.js";
+import { allCaptured, attachmentPayloadName, manifestRows } from "./attachments.js";
 
 // No default endpoint ships with the extension. The receiver is a corpus you
 // run; its address is yours, it is often on a private network, and baking one
@@ -400,7 +401,26 @@ export async function capturePage(tabId, onProgress, profile) {
   };
 }
 
-export async function submitCapture(capture, capturedAt) {
+/**
+ * A receiver's refusal as a sentence. FastAPI answers a schema refusal with a
+ * LIST of objects, and `String()` of that list is "[object Object]" -- which is
+ * all the reader saw of every refused capture until this existed.
+ */
+export function describeRefusal(payload, status) {
+  const detail = payload && (payload.detail ?? payload.error);
+  if (Array.isArray(detail)) {
+    const parts = detail.slice(0, 4).map((item) => {
+      if (!item || typeof item !== "object") return String(item);
+      const where = Array.isArray(item.loc) ? item.loc.filter((part) => part !== "body").join(".") : "";
+      return `${where ? `${where}: ` : ""}${item.msg || item.type || "invalid"}`;
+    });
+    return `http_${status} ${parts.join("; ")}`;
+  }
+  if (detail && typeof detail === "object") return `http_${status} ${JSON.stringify(detail).slice(0, 200)}`;
+  return detail ? String(detail) : `http_${status}`;
+}
+
+export async function submitCapture(capture, capturedAt, { holdAttachments = false } = {}) {
   const { apiBase, serviceToken } = await settings();
   const response = await apiFetch("/api/v1/intake/html", {
     apiBase,
@@ -408,6 +428,11 @@ export async function submitCapture(capture, capturedAt) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      // Sent only when there are attachments to follow. A held envelope is
+      // not published until `finalizeCapture` (or the receiver's stale-hold
+      // sweep) closes it, so the drain never sees the page without the files
+      // the reader is still uploading.
+      ...(holdAttachments ? { hold_attachments: true } : {}),
       url: capture.url,
       html: capture.html,
       sha256: capture.sha256,
@@ -428,8 +453,7 @@ export async function submitCapture(capture, capturedAt) {
   let payload = null;
   try { payload = await response.json(); } catch (_) { /* keep the status */ }
   if (!response.ok) {
-    const detail = (payload && (payload.detail || payload.error)) || `http_${response.status}`;
-    const error = new Error(String(detail));
+    const error = new Error(describeRefusal(payload, response.status));
     error.status = response.status;
     throw error;
   }
@@ -445,13 +469,116 @@ export async function readReceipt(receiptId) {
   return response.json();
 }
 
-export async function downloadFallback(capture, capturedAt) {
+/**
+ * Hand one attachment's bytes to the receiver, beside the held capture.
+ *
+ * Raw bytes in the body, the description in one header: a JSON envelope
+ * around 200 MB of video is a base64 copy nobody needs. The receiver hashes
+ * what it reads and refuses a mismatch with 4xx, exactly as it does the page.
+ */
+export async function uploadAttachment(receiptId, meta, bytes) {
+  const { apiBase, serviceToken } = await settings();
+  const description = {
+    index: meta.index, kind: meta.kind, url: meta.url, label: meta.label || "",
+    source: meta.source || "", sha256: meta.sha256, bytes: meta.bytes,
+    mime: meta.mime || "application/octet-stream", ext: meta.ext || ".bin",
+    ...(meta.final_url && meta.final_url !== meta.url ? { final_url: meta.final_url } : {}),
+    ...(meta.media_id ? { media_id: meta.media_id } : {}),
+    ...(meta.nejmdo ? { nejmdo: meta.nejmdo } : {}),
+  };
+  const response = await apiFetch(
+    `/api/v1/intake/${encodeURIComponent(receiptId)}/attachments`,
+    {
+      apiBase,
+      serviceToken,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        // Percent-encoded so a label in any script survives a header that
+        // may only carry Latin-1.
+        "x-corpus-attachment-meta": encodeURIComponent(JSON.stringify(description)),
+      },
+      body: bytes,
+    }
+  );
+  let payload = null;
+  try { payload = await response.json(); } catch (_) { /* keep the status */ }
+  if (!response.ok) {
+    const error = new Error(describeRefusal(payload, response.status));
+    error.status = response.status;
+    throw error;
+  }
+  return (payload && payload.attachment) || {};
+}
+
+/**
+ * Close a held capture: publish the envelope with whatever arrived.
+ *
+ * The manifest names every candidate, captured or failed with a reason, so
+ * the bundle records which attachments it holds and which it does not, rather
+ * than looking complete because nothing says otherwise.
+ */
+export async function finalizeCapture(
+  receiptId, rows, { complete, discovered, overflow } = {}, { keepalive = false, config = null } = {}
+) {
+  // `config` and `keepalive` exist for one caller: a progress tab that is
+  // closing. The request must be STARTED before the page goes away, so the
+  // settings are read in advance and no await precedes the fetch; keepalive is
+  // what lets the browser finish it after the page is gone (bodies up to 64 KB,
+  // and a manifest of forty rows is a few).
+  const { apiBase, serviceToken } = config || await settings();
+  const response = await apiFetch(
+    `/api/v1/intake/${encodeURIComponent(receiptId)}/finalize`,
+    {
+      apiBase,
+      serviceToken,
+      method: "POST",
+      keepalive,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        attachments: manifestRows(rows).filter((row) => row.status),
+        complete: Boolean(complete),
+        discovered: Number(discovered || 0),
+        overflow: Number(overflow || 0),
+      }),
+    }
+  );
+  let payload = null;
+  try { payload = await response.json(); } catch (_) { /* keep the status */ }
+  if (!response.ok) {
+    const error = new Error(describeRefusal(payload, response.status));
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+/**
+ * Offline: one attachment beside the capture, under the name the sidecar lists.
+ * Returns `{ payload_name }` like the online sink, so `collectAttachments` does
+ * not know which path it is on.
+ */
+export async function downloadAttachment(stem, meta, bytes) {
+  const payloadName = attachmentPayloadName(stem, meta.index, meta.kind, meta.ext);
+  const url = URL.createObjectURL(new Blob([bytes], { type: meta.mime || "application/octet-stream" }));
+  try {
+    await chrome.downloads.download({
+      url, filename: `corpus-capture/${payloadName}`, saveAs: false, conflictAction: "uniquify",
+    });
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  }
+  return { payload_name: payloadName };
+}
+
+export async function downloadFallback(capture, capturedAt, attachments = null) {
   // The sidecar is not a convenience copy of the filename: the intake worker
   // reads identity from it and from nothing else, so a download without one is
   // an unadmissible .html and stays in the inbox.
   const stem = downloadName(capture.doi, capture.url, capturedAt);
+  const rows = attachments && Array.isArray(attachments.rows) ? attachments.rows : [];
   const sidecar = {
-    schema: "corpus-capture-sidecar-v2",
+    schema: "corpus-capture-sidecar-v3",
     url: capture.url,
     final_url: capture.final_url,
     doi: capture.doi,
@@ -470,6 +597,13 @@ export async function downloadFallback(capture, capturedAt) {
     container_selector: capture.container_selector || "",
     figures: capture.figures || [],
     decorative_count: (capture.decorative || []).length,
+    // The attachment manifest, whether or not anything was discovered: an
+    // empty list is "the page linked nothing", which differs from a sidecar
+    // that predates attachments and says nothing at all.
+    attachments: manifestRows(rows),
+    attachments_discovered: Number((attachments && attachments.discovered) || rows.length),
+    attachments_complete: rows.length === Number((attachments && attachments.discovered) || rows.length)
+      && allCaptured(rows),
   };
   const htmlUrl = URL.createObjectURL(new Blob([capture.html], { type: "text/html" }));
   const jsonUrl = URL.createObjectURL(

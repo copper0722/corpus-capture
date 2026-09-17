@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.2.0 — 2026-09-17
+
+### Added
+
+- **Attachments.** One click now captures the article's own files beside the
+  page: the publisher's PDF, the supplementary files, the audio interview and
+  the embedded video (extension 1.2.0), into the same bundle, on the same click
+  (operator request, 2026-09-17). Discovery runs inside the page
+  (`discoverAttachmentsInPage`): `citation_pdf_url`, the publisher's PDF and
+  supplement link shapes, `<audio>`/`<video>` sources, JW Player media ids and
+  NEJM Quick Take cards, plus whatever a profile names in
+  `attachment_link_selectors`. Fetching runs inside the page too, because a
+  publisher's media path is hotlink-protected and wants the tab's cookies AND
+  its Referer; the bytes cross into the extension as bounded base64 chunks.
+  An off-origin video CDN a profile lists in `attachment_origins` is fetched
+  anonymously from the extension. Everything else is `off_origin` and recorded
+  as a gap.
+- **The bytes decide.** `classifyAttachmentBytes` reads the magic bytes: a
+  publisher's login page answered with status 200 to a PDF request is a
+  `failed: html_instead_of_pdf` row in the manifest, never `source.pdf`.
+- **Held captures.** `POST /api/v1/intake/html` accepts `hold_attachments`;
+  the receiver stages the page, takes each attachment through
+  `POST /api/v1/intake/{receipt_id}/attachments` (raw body, description in
+  `x-corpus-attachment-meta`), and publishes on
+  `POST /api/v1/intake/{receipt_id}/finalize`. A stale hold is published by the
+  receiver on its own with whatever arrived. The drain therefore never sees the
+  page without the files the reader was still uploading.
+- **Sidecar v3.** `attachments` lists every candidate the page offered,
+  `captured` with hash and stored name or `failed` with a reason, plus
+  `attachments_discovered` and `attachments_complete`. v1 and v2 remain
+  admissible. Offline, each captured attachment is downloaded beside the page
+  as `<stem>--NN-<kind><ext>`, the same name a receiver would choose
+  (`attachment_payload_name`, asserted identical on both sides).
+- **A capture runs in its own tab.** The toolbar popup, and a new keyboard
+  command (`Alt+Shift+S`, `Control+Shift+S` on a Mac), open `progress.html`
+  beside the article and the capture runs there: Chrome closes a popup on the
+  first click elsewhere, and a 70 MB interview upload must not close with it. A
+  progress tab closed mid-run finalizes its held capture with `keepalive`.
+- **Duplicates.** One file behind two links is fetched and stored once:
+  presentation query parameters (`download`, `utm_*`, …) do not make a second
+  candidate, and a resolved media id, URL or byte hash already held marks the
+  row `duplicate` with `duplicate_of`.
+- Library: `validate_attachments`, `validate_attachment_meta`,
+  `validate_finalize`, `attachment_payload_name`, `ReceiptStore.items()`;
+  registry keys `attachment_link_selectors` and `attachment_origins`; the NEJM
+  profile names its audio, supplement and PDF anchors and the JW Platform CDN.
+
+### Not done
+
+- HLS-only video (`.m3u8` with no mp4 rendition) is recorded as
+  `hls_not_supported`, not stitched.
+- A browser that quits mid-run cannot send its finalize; the receiver's
+  one-hour stale-hold sweep publishes the page with what arrived.
+
 ## v0.1.4 — 2026-09-11
 
 ### Fixed

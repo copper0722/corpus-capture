@@ -35,7 +35,8 @@ producer's mistake makes the producer's next mistake invisible.
 
 Public entrypoints
 ------------------
-``enforce_body_size()``, ``validate_submission()``, ``ReceiptStore``.
+``enforce_body_size()``, ``validate_submission()``, ``validate_attachment_meta()``,
+``validate_finalize()``, ``ReceiptStore``.
 
 Related tests
 -------------
@@ -50,7 +51,15 @@ import uuid
 from collections import OrderedDict
 from typing import Any
 
-from corpus_capture.sidecar import ACCESS_CLASSES, normalize_doi
+from corpus_capture.sidecar import (
+    ACCESS_CLASSES,
+    ATTACHMENT_KINDS,
+    ATTACHMENT_SUFFIXES,
+    MAX_ATTACHMENT_BYTES,
+    MAX_ATTACHMENTS,
+    normalize_doi,
+    validate_attachments,
+)
 
 #: The whole request body. A capture is a self-contained HTML page with its
 #: figures embedded as data URIs, so the ceiling is high; it is still a ceiling,
@@ -80,8 +89,17 @@ ALLOWED_FIELDS = frozenset({
     "url", "final_url", "html", "sha256", "captured_at", "doi", "title",
     "date_published", "publisher_meta", "authors", "access", "meta_sha256",
     "profile", "figures", "capture_tool", "container_selector",
-    "decorative_count", "scoped_to_article",
+    "decorative_count", "scoped_to_article", "hold_attachments",
 })
+#: What a producer says about one attachment it is about to upload. The bytes
+#: travel in the request body; this is the header beside them.
+ATTACHMENT_META_FIELDS = frozenset({
+    "index", "kind", "url", "label", "source", "sha256", "bytes", "mime", "ext",
+    "final_url", "media_id", "nejmdo",
+})
+#: The finalize body: the manifest and whether every candidate was captured.
+FINALIZE_FIELDS = frozenset({"attachments", "complete", "discovered", "overflow"})
+_MIME_RE = re.compile(r"^[a-z0-9!#$&^_.+-]{1,64}/[a-z0-9!#$&^_.+-]{1,96}$")
 #: Fields a producer may NOT send at any size. Identity, filing and rights are
 #: the receiver's to decide; a producer that asserts them is refused loudly
 #: rather than having them quietly dropped.
@@ -217,6 +235,10 @@ def validate_submission(payload: Any) -> dict[str, Any]:
         if not isinstance(value, str) or len(value) > MAX_META_VALUE_CHARS:
             raise SubmissionError("publisher_meta_value_malformed", key[:40])
 
+    hold = payload.get("hold_attachments", False)
+    if not isinstance(hold, bool):
+        raise SubmissionError("hold_attachments_not_a_bool")
+
     figures = payload.get("figures", [])
     if not isinstance(figures, list):
         raise SubmissionError("figures_not_a_list")
@@ -258,7 +280,92 @@ def validate_submission(payload: Any) -> dict[str, Any]:
         "profile": _text(payload, "profile", limit=MAX_SHORT_TEXT_CHARS) or "generic",
         "figures": figures,
         "capture_tool": _text(payload, "capture_tool", limit=MAX_SHORT_TEXT_CHARS),
+        "hold_attachments": hold,
     }
+
+
+def validate_attachment_meta(payload: Any) -> dict[str, Any]:
+    """Check the description a producer sends beside one attachment's bytes.
+
+    ``sha256`` and ``bytes`` are the producer's claims about the body and the
+    receiver verifies both against what it actually read; a mismatch is a 4xx,
+    never a retry. ``ext`` is a suggestion the receiver checks against the
+    accepted suffixes and otherwise replaces with ``.bin``.
+    """
+
+    if not isinstance(payload, dict):
+        raise SubmissionError("attachment_meta_not_an_object")
+    unknown = set(payload) - ATTACHMENT_META_FIELDS
+    if unknown:
+        raise SubmissionError("attachment_meta_field_unknown", ", ".join(sorted(unknown)))
+    kind = payload.get("kind")
+    if kind not in ATTACHMENT_KINDS:
+        raise SubmissionError("attachment_kind_unknown", str(kind)[:40])
+    index = payload.get("index")
+    if not isinstance(index, int) or isinstance(index, bool) or not 1 <= index <= MAX_ATTACHMENTS:
+        raise SubmissionError("attachment_index_malformed")
+    url = _text(payload, "url", limit=MAX_URL_CHARS, required=True)
+    if not (url or "").startswith(("http://", "https://")):
+        raise SubmissionError("attachment_url_not_http")
+    final_url = _text(payload, "final_url", limit=MAX_URL_CHARS)
+    sha256 = _text(payload, "sha256", limit=64, required=True)
+    if not _SHA256_RE.fullmatch((sha256 or "").lower()):
+        raise SubmissionError("attachment_sha256_malformed")
+    size = payload.get("bytes")
+    if not isinstance(size, int) or isinstance(size, bool) or not 0 < size <= MAX_ATTACHMENT_BYTES:
+        raise SubmissionError("attachment_bytes_malformed")
+    mime = (
+        _text(payload, "mime", limit=MAX_SHORT_TEXT_CHARS) or "application/octet-stream"
+    ).lower()
+    if not _MIME_RE.fullmatch(mime):
+        raise SubmissionError("attachment_mime_malformed")
+    ext = (_text(payload, "ext", limit=8) or "").lower()
+    if ext and ext not in ATTACHMENT_SUFFIXES:
+        ext = ".bin"
+    for key in ("label", "source", "media_id", "nejmdo"):
+        _text(payload, key, limit=MAX_SHORT_TEXT_CHARS)
+    return {
+        "index": index,
+        "kind": kind,
+        "url": url,
+        "final_url": final_url or url,
+        "label": payload.get("label") or "",
+        "source": payload.get("source") or "",
+        "sha256": (sha256 or "").lower(),
+        "bytes": size,
+        "mime": mime,
+        "ext": ext or ".bin",
+        "media_id": payload.get("media_id") or None,
+        "nejmdo": payload.get("nejmdo") or None,
+    }
+
+
+def validate_finalize(payload: Any) -> dict[str, Any]:
+    """Check the body that closes a held capture, or raise."""
+
+    if not isinstance(payload, dict):
+        raise SubmissionError("body_not_an_object")
+    unknown = set(payload) - FINALIZE_FIELDS
+    if unknown:
+        raise SubmissionError("unknown_field", ", ".join(sorted(unknown)))
+    rows = payload.get("attachments", [])
+    try:
+        validate_attachments(rows)
+    except ValueError as exc:  # SidecarError is a ValueError with a code
+        code = getattr(exc, "code", "attachments_malformed")
+        raise SubmissionError(code, getattr(exc, "detail", "")) from exc
+    complete = payload.get("complete", False)
+    if not isinstance(complete, bool):
+        raise SubmissionError("complete_not_a_bool")
+    counts: dict[str, int] = {}
+    for key in ("discovered", "overflow"):
+        value = payload.get(key, 0)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0 or value > 10_000:
+            raise SubmissionError(f"{key}_malformed")
+        counts[key] = value
+    if _metadata_bytes({"attachments": rows}) > MAX_METADATA_BYTES:
+        raise SubmissionError("metadata_too_large")
+    return {"attachments": rows, "complete": complete, **counts}
 
 
 class ReceiptStore:
@@ -312,6 +419,12 @@ class ReceiptStore:
         record.update(fields)
         self._rows[str(receipt_id)] = (born, record)
         return dict(record)
+
+    def items(self) -> list[tuple[str, dict[str, Any]]]:
+        """Every live receipt, oldest first. For a sweep, not for a lookup."""
+
+        self.prune()
+        return [(key, dict(record)) for key, (_, record) in self._rows.items()]
 
     def __len__(self) -> int:
         return len(self._rows)
