@@ -23,7 +23,7 @@
 - **`GET /api/v1/intake/{receipt_id}/identity`.** The same answer for a held
   capture, with the page's declarations as the receiver recorded them.
 
-### Fixed
+### Fixed (extension 1.3.1)
 
 - **A PDF on another site is not an attachment.** A body link to someone
   else's PDF (a cycling position statement citing the WADA Prohibited List) was

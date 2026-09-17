@@ -56,6 +56,7 @@ executed.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.3.1 | 2026-09-17 | Preview fixes from the first real capture: a PDF linked on another site is no longer listed as the article's file; an ahead-of-print page's placeholder volume and issue are not proposed; the page's full publication date is kept; the page is read once when the panel opens. No permission change. |
 | 1.3.0 | 2026-09-17 | Side panel replaces the popup: capture runs beside the article, and the reader confirms or corrects the DOI and bibliographic details before the receiver publishes the capture. New permission: `sidePanel`. Screenshots need refreshing. |
 | 1.2.0 | 2026-09-17 | One capture also saves the article's PDF, supplements, audio and video. |
 
