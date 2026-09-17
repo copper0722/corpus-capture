@@ -72,6 +72,10 @@ let apiOrigin = "";
 let running = false;
 let inFlight = null;
 let preview = null;
+// The tab and address being read right now. Opening the panel fires tab
+// events of its own; without this each one read the page and asked the
+// receiver again, and a late one wiped what the reader had started typing.
+let reading = null;
 let generation = 0;
 let pollTimer = null;
 
@@ -104,13 +108,14 @@ function pageNote(text) {
   $("#page-note").hidden = !text;
 }
 
-async function showTab({ force = false } = {}) {
+async function showTab() {
   const tab = await targetTab();
   $("#page-title").textContent = (tab && (tab.title || tab.url)) || "—";
   const capturable = Boolean(tab && isCapturableUrl(tab.url));
   if (!capturable) {
     generation += 1;
     preview = null;
+    reading = null;
     $("#review").hidden = true;
     $("#profile").textContent = "這個分頁不是 http(s) 文章頁";
     $("#profile").className = "badge unsupported";
@@ -118,9 +123,16 @@ async function showTab({ force = false } = {}) {
     return;
   }
   await showBadge(tab);
-  // The same page keeps what the reader already typed; a new page is read anew.
-  if (!force && preview && preview.tabId === tab.id && preview.url === tab.url) return;
-  await loadPreview(tab);
+  await ensurePreview(tab);
+}
+
+// The same page keeps what the reader already typed, and a page being read is
+// waited for, not read again; a new page is read anew.
+async function ensurePreview(tab) {
+  const same = (entry) => Boolean(entry) && entry.tabId === tab.id && entry.url === tab.url;
+  if (same(preview)) return undefined;
+  if (same(reading)) return reading.done;
+  return loadPreview(tab);
 }
 
 // -------------------------------------------------------------- the preview --
@@ -301,6 +313,16 @@ async function lookup(doi) {
 async function loadPreview(tab) {
   generation += 1;
   const mine = generation;
+  const done = readPreview(tab, mine);
+  reading = { tabId: tab.id, url: tab.url, done };
+  try {
+    await done;
+  } finally {
+    if (mine === generation) reading = null;
+  }
+}
+
+async function readPreview(tab, mine) {
   $("#meta-status").textContent = "讀取頁面中…";
   let page;
   try {
@@ -499,7 +521,7 @@ async function takeCaptureRequest() {
   const tab = await chrome.tabs.get(request.tabId).catch(() => null);
   if (!tab || !isCapturableUrl(tab.url)) return;
   // The keyboard saves what the preview shows: read it first if it is not.
-  if (!preview || preview.tabId !== tab.id || preview.url !== tab.url) await loadPreview(tab);
+  await ensurePreview(tab);
   if (!preview || preview.tabId !== tab.id) return;
   let review;
   try {
@@ -544,7 +566,7 @@ async function main() {
   buildFields();
   windowId = (await chrome.windows.getCurrent()).id;
   await refreshReceipts();
-  await showTab({ force: true });
+  await showTab();
   await takeCaptureRequest();
 }
 

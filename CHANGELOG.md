@@ -40,6 +40,9 @@
   progress") resets what a correction is measured against and keeps what the
   reader typed; before, the retried record itself read as the reader's
   correction.
+- **One read per page.** Opening the panel read the page and asked the
+  receiver once per tab event (four lookups on the first real capture); a read
+  in flight is now awaited instead of repeated.
 
 ## v0.2.0 — 2026-09-17
 

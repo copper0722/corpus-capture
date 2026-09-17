@@ -314,3 +314,21 @@ def test_a_retry_for_the_page_doi_is_still_the_proposal():
     assert "normalizeDoi(preview.detectedDoi)" in body
     assert "if (own) preview.baseline" in body
     assert "overwriteTouched: !own" in body
+
+
+def test_opening_the_panel_reads_the_page_once():
+    """The panel's own tab events must not read the page and ask the receiver again."""
+
+    source = _read("sidepanel.js")
+    start = source.index("async function ensurePreview(tab)")
+    ensure = source[start:source.index("function fieldControl(")]
+    assert "if (same(preview)) return undefined;" in ensure
+    assert "if (same(reading)) return reading.done;" in ensure
+    start = source.index("async function loadPreview(tab)")
+    load = source[start:source.index("async function readPreview(")]
+    assert "reading = { tabId: tab.id, url: tab.url, done };" in load
+    assert "if (mine === generation) reading = null;" in load
+    # Startup and the keyboard both go through the same gate.
+    keyboard = source[source.index("async function takeCaptureRequest("):]
+    assert "await ensurePreview(tab);" in keyboard
+    assert "force" not in source[source.index("async function showTab("):start]
