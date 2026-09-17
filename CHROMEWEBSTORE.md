@@ -1,0 +1,54 @@
+# Chrome Web Store submission record
+
+Kept current with every change to `extension/` (Chrome's
+[build-with-AI guidance](https://developer.chrome.com/docs/extensions/ai/build-with-ai)):
+a permission added to the manifest without a justification here fails
+`tests/test_chrome_web_store.py`.
+
+## Single purpose
+
+Save the article the reader is viewing -- the page with its figures, and the
+files the article itself links (PDF, supplementary files, audio, video) -- to a
+receiver the reader configured, in one action.
+
+## Permission justifications
+
+| Permission | Why it is needed |
+|---|---|
+| `activeTab` | The capture starts from the toolbar button or the keyboard command and reads only the tab the reader invoked it on. |
+| `scripting` | Serializes the article container and discovers its attachment links inside the page; fetches same-origin attachments from the page so the publisher sees the reader's own session and Referer. |
+| `storage` | Keeps the receiver address, the reader's service token, the cached publisher profile registry and the last receipts on this device. |
+| `downloads` | Offline fallback: when the receiver is unreachable, the page, its sidecar and its attachments are saved to the download folder. |
+| `alarms` | Polls the receiver for the admission state of recent captures and updates the toolbar badge. |
+| `<all_urls>` (host) | Articles live on any publisher's site; figures and publisher-profile video hosts must be fetched from the extension, where the page's CORS rules do not block them. Every fetch passes the network policy in `extension/net-policy.js` (https only, no private or loopback hosts, cookies only to the page's own origin). |
+| `commands` (manifest key) | `Alt+Shift+S` / `Control+Shift+S` starts a capture without opening the popup. |
+
+## Remote code
+
+None. Every script ships in the package; captured pages are sanitized and never
+executed.
+
+## Data use (privacy practices)
+
+- Collected: the content of the page the reader chose to save, its attachment
+  files, and the page's bibliographic metadata.
+- Sent only to the receiver address the reader entered in the options page. No
+  analytics, no third-party transfer, no sale, not used for advertising or
+  credit decisions.
+- Stored on the device: receiver address, service token, profile registry cache,
+  the last twenty receipts. No cookies, passwords or browsing history are read
+  or stored.
+- Attachments are fetched with the reader's existing session only from the
+  article's own origin; files from a profile-listed media host are fetched
+  anonymously.
+
+## Store listing
+
+- Name: Corpus Capture
+- Summary: 把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle。
+- Category: Productivity
+
+## Status
+
+Not submitted. The public repository release (v0.2.0) waits for the security
+audit required before publication.
