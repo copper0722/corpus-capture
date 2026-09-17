@@ -5,20 +5,23 @@
 ### Added
 
 - **Side panel (extension 1.3.0).** The toolbar icon opens a side panel that
-  stays beside the article; the capture runs there, and the keyboard command
-  opens it and starts the capture. The popup is gone. A browser without the
-  side panel API keeps the progress tab.
-- **Identity review.** Every capture is held until the reader confirms or
-  corrects the detected DOI and the bibliographic record (title, authors,
-  journal, date, volume, issue, pages, ISSN, publisher). Attachments upload in
-  parallel. The result is sent with finalize as `reader_review`, validated by
-  `validate_reader_review`, and a receiver that applies it keeps the page's own
-  declarations as `page_declared`. A review left unfinished stays held and can
-  be resumed from the panel.
-- **`GET /api/v1/intake/{receipt_id}/identity`.** What the reader reviews: the
-  detected DOI, the page's declarations, the receiver's resolved record for the
-  DOI (or a DOI the reader typed), and whether the receiver already holds the
-  work. A receiver without it answers 404 and the panel reviews the page alone.
+  stays beside the article. The popup is gone. A browser without the side
+  panel API keeps the progress tab.
+- **Preview first, then save.** Opening the panel (or switching tabs) reads the
+  page's declared DOI and bibliographic `<meta>` and shows them at once, then
+  fills in the receiver's record for that DOI and says whether the corpus
+  already holds the work. Nothing is sent until the reader presses
+  「儲存並建立 bundle」; the keyboard command opens the panel and saves the
+  preview as shown. The reader can correct the DOI (and look it up again) and
+  any field (title, authors, journal, date, volume, issue, pages, ISSN,
+  publisher). The previewed values travel with finalize as `reader_review`,
+  validated by `validate_reader_review`; a receiver that applies it keeps the
+  page's own declarations as `page_declared`. Attachments upload as before.
+- **`GET /api/v1/capture/identity?doi=`.** What the panel previews: the
+  receiver's resolved record for a DOI and whether it already holds the work.
+  A receiver without it answers 404 and the panel previews the page alone.
+- **`GET /api/v1/intake/{receipt_id}/identity`.** The same answer for a held
+  capture, with the page's declarations as the receiver recorded them.
 
 ## v0.2.0 — 2026-09-17
 
