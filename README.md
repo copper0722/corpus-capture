@@ -42,18 +42,19 @@ would disclose where one person's archive lives. The address must be `https`
 ## What happens when you press the button
 
 The toolbar icon opens a side panel beside the article; it stays open while you
-read. The badge at the top of the panel tells you what this site is worth:
+read. A badge at the top appears only when the site is not the normal case:
 
 | badge | meaning |
 |---|---|
-| supported | a publisher profile exists, and a fixture test defends it |
-| generic | no profile; the fallback selectors run, and the sidecar records `profile=generic` |
-| unsupported | a measured blocker, named in the badge |
+| (none) | a publisher profile exists, and a fixture test defends it |
+| 通用模式 | no profile; the fallback selectors run, and the sidecar records `profile=generic` |
+| 未支援 | a measured blocker, named in the badge |
 
-Then the status line moves through embedding progress, the figure manifest (how
-many figures, what they are called, how many images were classified as
-decoration), the receipt id, and finally a link to read what was admitted. The
-service worker keeps polling after the capture is sent.
+While saving, the status line moves through embedding progress and the figure
+manifest (how many figures, what they are called, how many images were
+classified as decoration). The recent captures below list each one's state, and
+link to the reader once it is admitted. The service worker keeps polling after
+the capture is sent.
 
 ### Preview first, then save (extension 1.3.0)
 
@@ -62,10 +63,23 @@ where it came from, then the bibliographic record -- the page's own
 declarations at once, the receiver's resolved record as soon as
 `GET /api/v1/capture/identity` answers, with the page's value listed under any
 field where the two disagree. Correct any field, or type another DOI and look it
-up again, then press "儲存並建立 bundle": the page and its attachments are
+up again (↻), then press "儲存": the page and its attachments are
 captured, and the previewed values travel to the receiver as `reader_review`,
 an observation the receiver weighs while keeping the page's declarations. The
 keyboard command saves what the preview shows.
+
+### On your receiver's own reading page (extension 1.4.0)
+
+When the active tab is a page of the receiver itself -- its reading UI -- the
+panel is not a capture form. It shows the work that page displays: title,
+authors, where it appeared, DOI and PMID links, type and tags, and follows the
+page as you move from one work to the next. The page declares the work with the
+same `citation_*` `<meta>` a publisher's article page uses (see
+[`docs/protocol.md`](docs/protocol.md#reading-pages-optional)); a declared DOI is
+completed from the receiver's record. Nothing is captured there.
+
+The panel shows values, and states you act on. Labels a value already explains,
+and notes about the normal case, are not on screen.
 
 ## Figures are chosen by structure, not by size
 

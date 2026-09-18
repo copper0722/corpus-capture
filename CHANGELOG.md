@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added (extension 1.4.0)
+
+- **The panel on your reading page.** On a tab whose origin is the configured
+  receiver, the side panel stops offering a capture and shows the work that
+  page displays: title, authors, where it appeared (`Nature ·
+  2026-09-02;657(8130):47-58`), DOI and PMID links, type and tags. The page
+  declares the work with standard Highwire `citation_*` and Dublin Core
+  `<meta>` (one set for the work shown, none when none is); the panel watches
+  `<head>` from inside the page and follows each change, and a declared DOI is
+  completed from `GET /api/v1/capture/identity` (asked once per DOI). No new
+  endpoint. Neither the button nor the keyboard command captures a reading
+  page (operator request, 2026-09-18).
+
+### Changed (extension 1.4.0)
+
+- **Only what informs is on screen.** The panel lost its headings, the page
+  title that repeated the title field, the per-field source notes, the
+  "loaded" status line, the shortcut paragraph and the receipt id. A badge
+  appears only when a site is not supported; the DOI's source only when it was
+  not the page's own declaration; a status only when a lookup did not answer.
+  The DOI's lookup and doi.org link are icon buttons, the save button says
+  「儲存」, and the recent captures are one line each: state and title, linked
+  to the reader. A test caps the static text on screen at 40 characters.
+
 ### Added
 
 - **Side panel (extension 1.3.0).** The toolbar icon opens a side panel that

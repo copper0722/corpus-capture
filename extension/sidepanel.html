@@ -8,59 +8,51 @@
 </head>
 <body>
 <main>
-  <header class="bar">
-    <h1>Corpus Capture <span id="version" class="version"></span></h1>
-    <a id="options" href="options.html">設定</a>
-  </header>
+  <p id="page-note" class="hint" hidden></p>
+  <p id="profile" class="badge" hidden></p>
 
-  <section id="page" aria-labelledby="page-heading">
-    <h2 id="page-heading">目前分頁</h2>
-    <p id="page-title" class="title">—</p>
-    <p id="profile" class="badge generic">讀取設定檔…</p>
-  </section>
+  <!-- On the receiver's own reading page: the work it shows, read-only. -->
+  <article id="bundle" aria-live="polite" hidden>
+    <h1 id="bundle-title" class="title"></h1>
+    <div id="bundle-authors" class="line"></div>
+    <p id="bundle-source" class="line"></p>
+    <p id="bundle-ids" class="line ids"></p>
+    <p id="bundle-tags" class="chips"></p>
+  </article>
 
   <form id="review" hidden>
-    <fieldset id="doi-step">
-      <legend>DOI</legend>
-      <div class="field">
-        <label for="doi">DOI</label>
-        <span id="doi-hint" class="hint"></span>
-        <input id="doi" name="doi" type="text" inputmode="url" autocomplete="off"
-               spellcheck="false" enterkeyhint="done"
-               pattern="\s*((https?://)?(dx\.)?doi\.org/|doi:\s*)?10\.\d{4,9}/\S+\s*"
-               aria-describedby="doi-hint doi-error">
-        <p id="doi-error" class="error-msg">DOI 應為 10.xxxx/… 的格式；沒有 DOI 請留空。</p>
-      </div>
-      <div class="row">
-        <a id="doi-link" target="_blank" rel="noreferrer noopener" hidden>在 doi.org 開啟</a>
-        <button id="doi-lookup" type="button" class="secondary">用這個 DOI 重新查詢</button>
-      </div>
-    </fieldset>
-    <fieldset id="meta-step">
-      <legend>書目資料</legend>
-      <p id="meta-status" role="status" aria-live="polite">讀取頁面中…</p>
-      <p id="known" class="note" hidden></p>
-      <div id="fields"></div>
-    </fieldset>
-    <div class="row">
-      <button id="save" type="submit">儲存並建立 bundle</button>
+    <div class="doi">
+      <label for="doi">DOI</label>
+      <input id="doi" name="doi" type="text" inputmode="url" autocomplete="off"
+             spellcheck="false" enterkeyhint="done"
+             pattern="\s*((https?://)?(dx\.)?doi\.org/|doi:\s*)?10\.\d{4,9}/\S+\s*"
+             aria-describedby="doi-hint doi-error">
+      <button id="doi-lookup" type="button" class="icon" title="用這個 DOI 重新查詢"
+              aria-label="用這個 DOI 重新查詢">↻</button>
+      <a id="doi-link" class="icon" target="_blank" rel="noreferrer noopener"
+         title="在 doi.org 開啟" aria-label="在 doi.org 開啟" hidden>↗</a>
     </div>
-    <p class="hint">快捷鍵 Alt+Shift+S（Mac：Control+Shift+S）直接以目前預覽儲存。儲存中請保持側欄開啟。</p>
+    <p id="doi-hint" class="hint" hidden></p>
+    <p id="doi-error" class="error-msg">DOI 格式為 10.xxxx/…；沒有請留空</p>
+    <p id="meta-status" class="hint" role="status" aria-live="polite" hidden></p>
+    <p id="known" class="note" hidden></p>
+    <div id="fields"></div>
+    <button id="save" type="submit"
+            title="快捷鍵 Alt+Shift+S（Mac：Control+Shift+S）。儲存中請保持側欄開啟。">儲存</button>
   </form>
-  <p id="page-note" class="hint" hidden></p>
 
-  <section id="run" aria-labelledby="run-heading" hidden>
-    <h2 id="run-heading">儲存進度</h2>
-    <p id="run-title" class="title"></p>
+  <section id="run" aria-label="儲存進度" hidden>
     <p id="status" role="status" aria-live="polite"></p>
     <ol id="rows"></ol>
     <p id="result"></p>
   </section>
 
-  <section aria-labelledby="receipts-heading">
-    <h2 id="receipts-heading">最近的收據</h2>
-    <ul id="receipts"></ul>
-  </section>
+  <ul id="receipts" aria-label="最近的擷取"></ul>
+
+  <footer class="bar">
+    <span id="version" class="version"></span>
+    <a id="options" href="options.html" title="設定" aria-label="設定">⚙</a>
+  </footer>
 </main>
 <script type="module" src="sidepanel.js"></script>
 </body>

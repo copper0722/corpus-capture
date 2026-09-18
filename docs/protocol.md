@@ -266,6 +266,27 @@ holds a work with that DOI. `reviewable: false` means the capture is no longer
 held, so a review would not be applied. A receiver without this endpoint
 answers 404, and the extension then reviews the page's declarations alone.
 
+## Reading pages (optional)
+
+A receiver that also serves a reading UI on its own origin can let the side
+panel describe the work on screen. On a tab whose origin is the configured
+receiver the panel offers no capture; it reads the page's declarations and
+shows them read-only.
+
+- The page declares the work it shows with standard `<meta name>` tags:
+  `citation_title`, `citation_author` (one per author), `citation_journal_title`
+  (a chapter: `citation_inbook_title`), `citation_publication_date`,
+  `citation_volume`, `citation_issue`, `citation_firstpage`, `citation_lastpage`,
+  `citation_doi`, `citation_pmid`, `citation_issn`, `citation_publisher`,
+  `citation_keywords` (one per tag) and `dc.type`. One set for the work shown,
+  none when no work is shown. A single-page app rewrites them when the work on
+  screen changes; the panel watches `<head>` and follows. Where a `citation_`
+  name is absent the panel also reads `dc.title`, `dc.creator`, `dc.date`,
+  `citation_date`, `citation_conference_title`, `dc.publisher` and `dc.subject`.
+- For a declared DOI the panel asks `GET /api/v1/capture/identity?doi=`, and the
+  receiver's record fills in what the page leaves out (authors, the journal's
+  full name, pages). Nothing else is sent, and nothing is written.
+
 ## `GET /api/v1/capture/profiles`
 
 Returns the publisher selector registry as pure data: host patterns, article

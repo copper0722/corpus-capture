@@ -19,21 +19,23 @@ export const METADATA_FIELDS = [
 export const FIELD_LABELS = {
   doi: "DOI",
   title: "標題",
-  authors: "作者（一行一位）",
+  authors: "作者",
   journal: "期刊",
-  published: "出版日期",
+  published: "日期",
   volume: "卷",
   issue: "期",
-  pages: "頁碼",
+  pages: "頁",
   issn: "ISSN",
   publisher: "出版者",
 };
 
+//: Said only when the DOI is NOT the page's own declaration: that is the normal
+//: case, and a line repeating it on every article is a line nobody reads.
 export const DOI_SOURCE_LABELS = {
-  page_meta: "頁面宣告（citation_doi 等）",
-  canonical_url: "由 canonical 網址推得",
-  url: "由頁面網址推得",
-  none: "頁面沒有宣告 DOI",
+  page_meta: "",
+  canonical_url: "DOI 由 canonical 網址推得",
+  url: "DOI 由網址推得",
+  none: "頁面無 DOI",
 };
 
 //: Bounds that keep a review small enough for the finalize body (keepalive

@@ -10,7 +10,9 @@ a permission added to the manifest without a justification here fails
 Save the article the reader is viewing -- the page with its figures, and the
 files the article itself links (PDF, supplementary files, audio, video) -- to a
 receiver the reader configured, in one action, after the reader has confirmed
-or corrected the article's DOI and bibliographic details in the side panel.
+or corrected the article's DOI and bibliographic details in the side panel. On
+that receiver's own reading page, the same side panel shows the bibliographic
+details of the saved work the page displays.
 
 ## Permission justifications
 
@@ -18,7 +20,7 @@ or corrected the article's DOI and bibliographic details in the side panel.
 |---|---|
 | `activeTab` | The capture starts from the side panel or the keyboard command and reads only the article tab the reader is on. |
 | `sidePanel` | The toolbar button opens a side panel beside the article, where the reader starts the capture, watches its progress, and confirms or corrects the detected DOI and bibliographic details before the article is saved. |
-| `scripting` | Serializes the article container and discovers its attachment links inside the page; fetches same-origin attachments from the page so the publisher sees the reader's own session and Referer. |
+| `scripting` | Serializes the article container and discovers its attachment links inside the page; fetches same-origin attachments from the page so the publisher sees the reader's own session and Referer. On the receiver's own reading page, reads the bibliographic `<meta>` it declares for the work on screen and watches for the next one. |
 | `storage` | Keeps the receiver address, the reader's service token, the cached publisher profile registry and the last receipts on this device. |
 | `downloads` | Offline fallback: when the receiver is unreachable, the page, its sidecar and its attachments are saved to the download folder. |
 | `alarms` | Polls the receiver for the admission state of recent captures and updates the toolbar badge. |
@@ -45,17 +47,21 @@ executed.
 - Attachments are fetched with the reader's existing session only from the
   article's own origin; files from a profile-listed media host are fetched
   anonymously.
+- On the receiver's own reading page, the panel reads the bibliographic
+  `<meta>` that page declares and sends the declared DOI to that receiver's
+  lookup; nothing from it is stored or sent anywhere else.
 
 ## Store listing
 
 - Name: Corpus Capture
-- Summary: 把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle；側欄可先確認並修正 DOI 與書目資料。
+- Summary: 把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle；側欄可先確認並修正 DOI 與書目資料，在 corpus 的閱讀頁則顯示該篇的書目資料。
 - Category: Productivity
 
 ## Version history
 
 | Version | Date | Change |
 |---|---|---|
+| 1.4.0 | 2026-09-18 | On the receiver's own reading page the side panel becomes a read-only card of the work that page shows (its declared `citation_*` metadata, completed from the receiver's record for its DOI), following the page as it changes; nothing is captured there. The panel shows only values and states that need action: headings, instructions and notes about the normal case are gone. No permission change. |
 | 1.3.2 | 2026-09-18 | The side panel and the settings page show the extension's version, so a reader can see which build is loaded. |
 | 1.3.1 | 2026-09-17 | Preview fixes from the first real capture: a PDF linked on another site is no longer listed as the article's file; an ahead-of-print page's placeholder volume and issue are not proposed; the page's full publication date is kept; the page is read once when the panel opens. No permission change. |
 | 1.3.0 | 2026-09-17 | Side panel replaces the popup: capture runs beside the article, and the reader confirms or corrects the DOI and bibliographic details before the receiver publishes the capture. New permission: `sidePanel`. Screenshots need refreshing. |

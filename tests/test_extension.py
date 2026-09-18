@@ -205,7 +205,7 @@ def _node() -> str | None:
 @pytest.mark.parametrize("module", ["serialize.js", "capture.js", "sidepanel.js",
                                     "options.js", "service-worker.js", "attachments.js",
                                     "runner.js", "progress.js", "launch.js", "review.js",
-                                    "identity-probe.js"])
+                                    "identity-probe.js", "bundle-view.js"])
 def test_every_module_parses(module: str):
     """A syntax error here is an extension that never loads and never says why.
 
@@ -346,3 +346,51 @@ def test_the_panel_says_which_build_is_loaded():
     version = json.loads(_read("manifest.json"))["version"]
     for name in ("sidepanel.js", "sidepanel.html", "options.js", "options.html", "capture.js"):
         assert version not in _read(name), f"{name} pins the version instead of reading it"
+
+
+def test_the_receivers_reading_page_turns_the_panel_into_its_card():
+    """On the receiver's own origin the panel shows the declared work; it captures nothing."""
+
+    panel = _read("sidepanel.js")
+    show = panel[panel.index("async function showTab("):
+                 panel.index("async function ensurePreview(")]
+    assert "isReceiverPage(tab.url, await receiverBase())" in show
+    assert show.index("isReceiverPage(") < show.index("await ensurePreview(tab)")
+    assert "followBundle(tab)" in show
+    # The page is watched from inside, not polled from the panel.
+    assert "func: awaitBundleDeclaration" in panel
+    assert "BUNDLE_WAIT_MS" in panel and "BUNDLE_SETTLE_MS" in panel
+    # A declared DOI is completed from the receiver's record, once per DOI.
+    assert "identity = await lookupIdentity(doi);" in panel
+    assert "identities.has(doi)" in panel
+    # Neither the button nor the keyboard captures a reading page.
+    start = panel[panel.index("async function startCapture("):panel.index("function receiptItem(")]
+    assert "if (isReceiverPage(tab.url, await receiverBase())) return;" in start
+    keyboard = panel[panel.index("async function takeCaptureRequest("):]
+    assert "isReceiverPage(tab.url, await receiverBase())" in keyboard
+    assert 'id="bundle"' in _read("sidepanel.html")
+    assert 'body[data-mode="reader"] #run' in _read("sidepanel.css")
+
+
+def test_the_panel_says_only_what_the_values_do_not():
+    """Every visible word earns its place (operator request, 2026-09-18).
+
+    The static markup is labels and controls only: the headings, the notes about
+    the normal case and the instructions that used to fill the panel are gone,
+    and the budget keeps them from growing back one sentence at a time. The
+    hover titles and accessible names do not count; they are not on screen.
+    """
+
+    html = _read("sidepanel.html")
+    body = html[html.index("<body>"):]
+    body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+    body = re.sub(r"<script.*?</script>", "", body, flags=re.S)
+    visible = re.sub(r"<[^>]+>", " ", body)
+    visible = re.sub(r"\s+", "", visible)
+    assert len(visible) <= 40, visible
+    for gone in ("目前分頁", "書目資料", "最近的收據", "儲存並建立", "直接以目前預覽儲存"):
+        assert gone not in html
+    panel = _read("sidepanel.js")
+    for gone in ("已載入${source}", "corpus 已有這篇", "這個分頁不是 http(s) 文章頁",
+                 "收據 ${outcome.receiptId}"):
+        assert gone not in panel

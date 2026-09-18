@@ -151,9 +151,12 @@ def test_the_extension_ships_no_endpoint_and_no_credential():
             continue
         body = (ROOT / name).read_text(encoding="utf-8", errors="ignore")
         assert "Bearer " not in body
+        # doi.org and PubMed are identifier resolvers behind a link the reader
+        # clicks; the extension sends them nothing.
         for host in re.findall(r"https://([A-Za-z0-9.-]+)", body):
             assert host.endswith("example") or host.endswith(".example") or host in {
-                "doi.org", "dx.doi.org", "www.w3.org", "developer.chrome.com",
+                "doi.org", "dx.doi.org", "pubmed.ncbi.nlm.nih.gov", "www.w3.org",
+                "developer.chrome.com",
             }, f"{name} points at {host}"
 
 
