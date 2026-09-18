@@ -332,3 +332,17 @@ def test_opening_the_panel_reads_the_page_once():
     keyboard = source[source.index("async function takeCaptureRequest("):]
     assert "await ensurePreview(tab);" in keyboard
     assert "force" not in source[source.index("async function showTab("):start]
+
+
+def test_the_panel_says_which_build_is_loaded():
+    """A reload is how every fix reaches an unpacked extension; the panel says which."""
+
+    assert '<span id="version" class="version"></span>' in _read("sidepanel.html")
+    assert '$("#version").textContent = EXTENSION_VERSION;' in _read("sidepanel.js")
+    capture = _read("capture.js")
+    assert "export const EXTENSION_VERSION" in capture and "getManifest" in capture
+    # One copy of the number, in the manifest: the literal that used to live in
+    # capture.js had drifted two minor versions before it was read from there.
+    version = json.loads(_read("manifest.json"))["version"]
+    for name in ("sidepanel.js", "sidepanel.html", "options.js", "options.html", "capture.js"):
+        assert version not in _read(name), f"{name} pins the version instead of reading it"

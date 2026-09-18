@@ -10,6 +10,7 @@
 
 import { safeReaderUrl } from "./net-policy.js";
 import {
+  EXTENSION_VERSION,
   finalizeCapture,
   listReceipts,
   lookupIdentity,
@@ -563,6 +564,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 async function main() {
+  // The version is on the panel because a reload is how every fix reaches an
+  // unpacked extension, and nothing else on screen says which build is loaded
+  // (operator request, 2026-09-18).
+  $("#version").textContent = EXTENSION_VERSION;
   buildFields();
   windowId = (await chrome.windows.getCurrent()).id;
   await refreshReceipts();

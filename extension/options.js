@@ -1,7 +1,8 @@
 "use strict";
 
-import { DEFAULT_API_BASE, REVIEW_KEY, normalizeBase } from "./capture.js";
+import { DEFAULT_API_BASE, EXTENSION_VERSION, REVIEW_KEY, normalizeBase } from "./capture.js";
 
+document.querySelector("#version").textContent = `${EXTENSION_VERSION} `;
 const apiBase = document.querySelector("#apiBase");
 const serviceToken = document.querySelector("#serviceToken");
 const review = document.querySelector("#review");

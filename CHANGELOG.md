@@ -23,6 +23,12 @@
 - **`GET /api/v1/intake/{receipt_id}/identity`.** The same answer for a held
   capture, with the page's declarations as the receiver recorded them.
 
+### Added (extension 1.3.2)
+
+- **The panel shows its version.** The side panel title and the settings page
+  carry the manifest version, because a reload is how every fix reaches an
+  unpacked extension and there was no way to see which build was loaded.
+
 ### Fixed (extension 1.3.1)
 
 - **A PDF on another site is not an attachment.** A body link to someone

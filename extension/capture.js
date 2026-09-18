@@ -19,9 +19,9 @@ export const DEFAULT_API_BASE = "";
 // `globalThis.chrome`, not `chrome`: optional chaining does not protect against
 // an identifier that was never declared, and this module is imported by tests
 // that run in node, where there is no extension API at all.
-export const CAPTURE_TOOL = `chrome-capture/${
-  (globalThis.chrome?.runtime?.getManifest?.() || {}).version || "0"
-}`;
+export const EXTENSION_VERSION =
+  (globalThis.chrome?.runtime?.getManifest?.() || {}).version || "0";
+export const CAPTURE_TOOL = `chrome-capture/${EXTENSION_VERSION}`;
 export const PROFILES_KEY = "profileRegistry";
 export const PROFILES_FETCHED_KEY = "profileRegistryFetchedAt";
 export const RECEIPTS_KEY = "receipts";

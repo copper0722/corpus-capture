@@ -13,6 +13,7 @@
 body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.5 system-ui, "PingFang TC", "Noto Sans TC", sans-serif; }
 main { padding: 12px 14px 32px; display: flex; flex-direction: column; gap: 16px; }
 h1 { font-size: 1.05rem; margin: 0; }
+.version { font-weight: 400; font-size: .75rem; color: var(--muted); }
 h2 { font-size: .95rem; margin: 0 0 6px; }
 section, form { display: flex; flex-direction: column; gap: 8px; }
 [hidden] { display: none !important; }
