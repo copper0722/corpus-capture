@@ -74,6 +74,11 @@ _ID_LABEL_RE = re.compile(
 )
 _KIND_WORDS = {"f": "Figure", "fig": "Figure", "figure": "Figure",
                "t": "Table", "tab": "Table", "tbl": "Table", "table": "Table"}
+#: What an unlabelled, captioned figure inside the abstract is called.
+GRAPHICAL_ABSTRACT_LABEL = "Graphical abstract"
+#: An ancestor that says "this is the abstract": Atypon's `#abstracts` and
+#: `#structured-abstract`, `section.abstract`, DPUB-ARIA's `doc-abstract`.
+_ABSTRACT_MARK_RE = re.compile(r"abstract", re.I)
 #: How much caption text is worth carrying. A caption is a sentence or two; a
 #: page that puts an entire methods section in one is not describing a figure.
 MAX_CAPTION_CHARS = 2000
@@ -187,6 +192,26 @@ def is_unnumbered_asset(url: str, *, patterns: tuple[str, ...] = ()) -> bool:
 
     lowered = (url or "").lower()
     return any(pattern.lower() in lowered for pattern in patterns if pattern)
+
+
+def in_abstract(node, container) -> bool:
+    """True when the page sets ``node`` inside its abstract, within the article.
+
+    A layout fact, not a publisher's spelling: the abstract is marked on an
+    ancestor by id, class or the DPUB-ARIA role. The walk stops at the article
+    container, so a site-wide wrapper that merely mentions the word cannot make
+    every figure on the page an abstract figure.
+    """
+
+    for parent in node.parents:
+        if parent is container or parent is None:
+            return False
+        if (parent.get("role") or "").strip().lower() == "doc-abstract":
+            return True
+        marks = [parent.get("id") or "", *(parent.get("class") or [])]
+        if any(_ABSTRACT_MARK_RE.search(mark) for mark in marks):
+            return True
+    return False
 
 
 def _described_by(node, img) -> str:
@@ -356,6 +381,13 @@ def build_figure_manifest(
             caption=caption,
             numbered=not is_unnumbered_asset(url, patterns=unnumbered_patterns),
         )
+        if not label and rank == 0 and caption and in_abstract(node, container):
+            # The visual abstract. Science prints it as `<figure id="Fa">` in the
+            # structured abstract with a full caption and no "Fig." anywhere, so
+            # every label source is silent and a real, captioned display item
+            # was filed as decoration. Where it sits is the evidence: a figure
+            # element the page captions inside its abstract.
+            label = GRAPHICAL_ABSTRACT_LABEL
         if not label:
             return
         payload = (asset_bytes or {}).get(url)

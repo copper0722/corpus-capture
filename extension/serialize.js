@@ -150,12 +150,23 @@ export function serializePage(nonce, profile, limits) {
     }
     return "";
   };
+  // The page sets this node inside its abstract, within the article: Atypon's
+  // `#abstracts` and `#structured-abstract`, `section.abstract`, DPUB-ARIA's
+  // `doc-abstract`. The receiver's figure_manifest.in_abstract() is the twin.
+  const inAbstract = (node) => {
+    const parent = node.parentElement;
+    const mark = parent && parent.closest('[role="doc-abstract"], [id*="abstract" i], [class*="abstract" i]');
+    return Boolean(mark) && mark !== articleRoot && articleRoot.contains(mark);
+  };
   const claimFigure = (node, img, selector, rank) => {
     if (claimed.has(img) || figureRows.length >= cap.maxFigures) return;
     const caption = captionOf(node);
     const alt = (img.getAttribute("alt") || "").trim().slice(0, cap.maxAltChars);
     const elementId = (node.id || img.id || "").trim();
-    const label = labelFor(elementId, alt, caption);
+    let label = labelFor(elementId, alt, caption);
+    // The visual abstract: a figure element the page captions inside its
+    // abstract, with no "Fig." anywhere (Science's `<figure id="Fa">`).
+    if (!label && rank === 0 && caption && inAbstract(node)) label = "Graphical abstract";
     if (!label) return;
     claimed.add(img);
     figureRows.push({

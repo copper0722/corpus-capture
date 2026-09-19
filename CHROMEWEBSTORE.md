@@ -61,6 +61,7 @@ executed.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.4.3 | 2026-09-19 | A captioned figure inside the article's abstract (a visual or graphical abstract with no figure label) is recorded in the figure manifest. No permission change. |
 | 1.4.2 | 2026-09-19 | A page the browser is translating is refused instead of being saved as a half-translated source; the panel says so and asks the reader to show the original first. No permission change. |
 | 1.4.1 | 2026-09-19 | A page that declares its DOI as `publication_doi` (a Science news story) is recognized; a news page's byline, date and publisher are read from its JSON-LD when no `<meta>` gives them; a declared timestamp is shown as its day. A settled capture is listed only beside its own page. No permission change. |
 | 1.4.0 | 2026-09-18 | On the receiver's own reading page the side panel becomes a read-only card of the work that page shows (its declared `citation_*` metadata, completed from the receiver's record for its DOI), following the page as it changes; nothing is captured there. The panel shows only values and states that need action: headings, instructions and notes about the normal case are gone. No permission change. |

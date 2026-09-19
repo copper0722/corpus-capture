@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added (extension 1.4.3, figure selection)
+
+- **The visual abstract is a figure.** A figure element the page captions
+  inside its abstract -- an ancestor marked `abstract` by id or class, or
+  `role="doc-abstract"`, within the article container -- is selected as
+  `Graphical abstract` even though nothing on it says "Fig.". Science prints
+  its visual abstract as `<figure id="Fa">` in `#structured-abstract` with a
+  full caption and no label, so it was filed as decoration while Fig. 1-4 were
+  kept. The rule is layout, not a publisher spelling, and it is the same in the
+  serializer and in `figure_manifest.build_figure_manifest()`; a test runs both
+  on one page. An unlabelled captioned figure in the body is still not guessed
+  at, and a caption is required (operator request, 2026-09-19).
+
 ### Fixed (extension 1.4.2)
 
 - **A page the browser is translating is not saved.** Chrome's page

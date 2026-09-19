@@ -362,6 +362,103 @@ class TestAriaDescribedBy:
         assert figures[0].caption == ""
 
 
+SCIENCE_URL = "https://www.science.org/doi/10.1126/science.synthetic"
+#: The shape Science gives a research article: the visual abstract is a
+#: captioned `<figure id="Fa">` inside the structured abstract, and nothing on
+#: it says "Fig."; the body figures are `F1`... with "Fig. 1 ." captions.
+SCIENCE_VISUAL_ABSTRACT = """<html><body><article class="{article_class}">
+<div id="abstracts"><section id="structured-abstract"><section id="abs-sec-4">
+ <div class="figure-wrap"><figure id="Fa" class="graphic">
+  <img src="https://www.science.org/cms/asset/a/science.synthetic-fa.jpg" alt="">
+  <figcaption>{abstract_caption}</figcaption></figure></div>
+</section></section></div>
+<section id="bodymatter"><section id="sec-1">
+ <p>{filler}</p>
+ <div class="figure-wrap"><figure id="F1" class="graphic">
+  <img src="https://www.science.org/cms/asset/b/science.synthetic-f1.jpg" alt="">
+  <figcaption>Fig. 1 . A numbered figure in the body.</figcaption></figure></div>
+ <div class="figure-wrap"><figure id="Fb" class="graphic">
+  <img src="https://www.science.org/cms/asset/c/science.synthetic-fb.jpg" alt="">
+  <figcaption>An unnumbered, captioned illustration in the body.</figcaption></figure></div>
+</section></section>
+</article></body></html>"""
+
+
+def _science(abstract_caption="Illustration of the model and its deployment.",
+             article_class="core"):
+    return SCIENCE_VISUAL_ABSTRACT.format(
+        abstract_caption=abstract_caption, article_class=article_class,
+        filler="Body text. " * 80,
+    )
+
+
+class TestTheVisualAbstract:
+    """A figure the page captions inside its abstract is a figure (operator, 2026-09-19).
+
+    Measured on a Science research article: `<figure id="Fa">` in
+    `#structured-abstract`, a full caption, no "Fig." anywhere. Every label
+    source was silent, so the visual abstract was filed as decoration while
+    Fig. 1-4 were kept. Where it sits is the evidence.
+    """
+
+    def _labels(self, markup: str):
+        manifest = build_figure_manifest(
+            markup, profile=profile_for_url(SCIENCE_URL), base_url=SCIENCE_URL
+        )
+        return [(figure.label, figure.figure_id) for figure in manifest.figures]
+
+    def test_it_is_selected_and_named_for_what_it_is(self):
+        assert self._labels(_science()) == [("Graphical abstract", "Fa"), ("Figure 1", "F1")]
+
+    def test_the_same_figure_outside_the_abstract_is_still_not_guessed_at(self):
+        """The control: `Fb` has a caption and no label, in the body. Unchanged."""
+
+        assert ("Graphical abstract", "Fb") not in self._labels(_science())
+        assert all(figure_id != "Fb" for _, figure_id in self._labels(_science()))
+
+    def test_without_a_caption_it_is_not_a_figure(self):
+        assert self._labels(_science(abstract_caption="")) == [("Figure 1", "F1")]
+
+    def test_a_wrapper_that_merely_says_abstract_does_not_make_every_figure_one(self):
+        """The article container itself is not an abstract mark."""
+
+        labels = self._labels(_science(article_class="abstract-view"))
+        assert labels == [("Graphical abstract", "Fa"), ("Figure 1", "F1")]
+
+    def test_the_extension_selects_the_same_figures(self):
+        """The serializer is the twin of this module; they may not disagree."""
+
+        import json
+        import shutil
+        import subprocess
+
+        root = Path(__file__).resolve().parents[1]
+        node = shutil.which("node") or shutil.which("nodejs")
+        if node is None or not (root / "node_modules" / "linkedom").is_dir():
+            pytest.skip("node or linkedom is not installed")
+        registry = load_registry()
+        profile = json.dumps(profile_for_url(SCIENCE_URL))
+        cases = (("core", "Illustration of the model."), ("abstract-view", ""))
+        for article_class, caption in cases:
+            markup = _science(abstract_caption=caption, article_class=article_class)
+            script = f"""
+              import {{ parseHTML }} from "linkedom";
+              import {{ serializePage }} from "{(root / "extension" / "serialize.js").as_posix()}";
+              import {{ LIMITS }} from "{(root / "extension" / "limits.js").as_posix()}";
+              const {{ document }} = parseHTML({json.dumps(markup)});
+              globalThis.document = document;
+              globalThis.location = {{ href: {json.dumps(SCIENCE_URL)} }};
+              const page = serializePage("0123456789abcdef", {profile}, LIMITS);
+              console.log(JSON.stringify((page.figures || []).map((f) => [f.label, f.figure_id])));
+            """
+            result = subprocess.run([node, "--input-type=module", "--eval", script],
+                                    capture_output=True, text=True, check=False, cwd=root)
+            assert result.returncode == 0, result.stderr
+            seen = [tuple(row) for row in json.loads(result.stdout.strip().splitlines()[-1])]
+            assert seen == self._labels(markup), (article_class, caption)
+        assert registry  # the profile came from the shipped registry
+
+
 def test_every_supported_profile_has_the_fixture_it_claims():
     """`supported` is a measurement; a missing fixture makes it a wish."""
 
