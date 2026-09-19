@@ -369,6 +369,12 @@ export async function inlineAssets(page, onProgress, profile) {
   return { html: serializeDocument(doc), inlined, dropped, refused, removed };
 }
 
+//: What a refusal by the serializer means to the reader. A code not listed here
+//: is shown as it is.
+export const PAGE_REFUSALS = {
+  page_translated: "這頁正由瀏覽器翻譯；請先在 Chrome 選「顯示原文」（或關閉翻譯後重新整理），再儲存。",
+};
+
 export async function capturePage(tabId, onProgress, profile) {
   const nonce = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
   const [injected] = await chrome.scripting.executeScript({
@@ -377,7 +383,7 @@ export async function capturePage(tabId, onProgress, profile) {
     args: [nonce, profile || {}, LIMITS],
   });
   const page = injected && injected.result;
-  if (page && page.error) throw new Error(page.error);
+  if (page && page.error) throw new Error(PAGE_REFUSALS[page.error] || page.error);
   if (!page || !page.html) throw new Error("page_not_serializable");
   page.nonce = nonce;
   const { html, inlined, dropped, refused, removed } = await inlineAssets(

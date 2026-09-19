@@ -124,6 +124,12 @@ A refused asset is counted and shown in the receipt rather than dropped quietly.
 If a publisher serves figures from a CDN this does not know about, the fix is a
 line in `profiles/capture_profiles.json`, not a wider permission.
 
+A page your browser is translating is refused whole. Chrome's translation
+rewrites the text in place, a screenful at a time, so the DOM holds a machine
+translation of the top of the article above the original; saving that would file
+it as the source. Show the original (or turn translation off and reload), then
+save. The side panel says so as soon as it reads such a page.
+
 Requests that carry your service token — the registry, the intake, the receipt —
 go out with `redirect: "error"`, no cookies, and a check that the answer came
 from the origin you configured.

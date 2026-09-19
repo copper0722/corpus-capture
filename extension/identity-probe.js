@@ -87,6 +87,9 @@ export function probePageIdentity(keys, cap) {
   return {
     url: location.href,
     canonical_url: (canonical && canonical.href) || "",
+    // The serializer refuses a page the browser is translating; same test.
+    translated: /\btranslated-(ltr|rtl)\b/.test(document.documentElement.className || "")
+      || Boolean(document.querySelector('font[style*="vertical-align: inherit"]')),
     doi: first(keys.doi),
     title: (first(keys.title) || document.title || "").slice(0, cap.maxTitleChars),
     date_published: (first(keys.date_published) || String((article && article.datePublished) || "").trim())

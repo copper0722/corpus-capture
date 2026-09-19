@@ -14,6 +14,14 @@
 // scraping is entirely capable of containing the literal word we chose.
 export function serializePage(nonce, profile, limits) {
   profile = profile || {};
+  // Chrome's page translation rewrites the text nodes in place, a screenful at
+  // a time, and marks <html>. A capture of that DOM is a machine translation of
+  // the top of the article and the original below it, filed as the source.
+  // Refused, not repaired: the original text is no longer in the page.
+  if (/\btranslated-(ltr|rtl)\b/.test(document.documentElement.className || "")
+      || document.querySelector('font[style*="vertical-align: inherit"]')) {
+    return { error: "page_translated" };
+  }
   // Passed in rather than imported: this function is injected into the page as
   // a stringified function, so it has no module scope. extension/limits.js is
   // the one table; this is a copy of the defaults for the case where an older

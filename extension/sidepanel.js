@@ -18,6 +18,7 @@
 import { safeReaderUrl } from "./net-policy.js";
 import {
   EXTENSION_VERSION,
+  PAGE_REFUSALS,
   SETTLED_STATES as SETTLED,
   finalizeCapture,
   listReceipts,
@@ -585,7 +586,8 @@ async function readPreview(tab, mine) {
   applyProposal(proposal, { overwriteTouched: true });
   $("#review").hidden = false;
   $("#save").disabled = running;
-  pageNote("");
+  // Said before the reader saves; the serializer is what refuses.
+  pageNote(page.translated ? PAGE_REFUSALS.page_translated : "");
   await lookup(page.doi);
 }
 

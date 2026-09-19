@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed (extension 1.4.2)
+
+- **A page the browser is translating is not saved.** Chrome's page
+  translation rewrites the text in place, a screenful at a time, so a capture
+  taken while it was on stored a machine translation of the top of the article
+  above the original, as the source (first seen on a Science research article:
+  title, abstract, byline and two captions translated, the methods not). The
+  serializer now refuses such a page (`page_translated`: the `translated-ltr` /
+  `translated-rtl` class on `<html>`, or Chrome's `<font>` wrappers), the panel
+  says so as soon as it reads the page, and the refusal tells the reader to
+  show the original first. The original text is not in a translated page, so
+  there is nothing to repair it from.
+
 ### Fixed (extension 1.4.1)
 
 - **A Science news story has a DOI.** An Atypon page that is not a journal

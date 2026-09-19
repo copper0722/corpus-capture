@@ -390,6 +390,73 @@ def test_a_settled_capture_is_listed_beside_its_own_page_only():
     }
 
 
+# What Chrome leaves in a page it is translating: a class on <html>, and the
+# translated text wrapped in <font> elements.
+TRANSLATED_BY_CLASS = NEWS_PAGE.replace(
+    "<html>", '<html class="no-js translated-ltr" lang="zh-TW">'
+)
+TRANSLATED_BY_WRAPPER = NEWS_PAGE.replace(
+    "<p>body</p>",
+    '<p><font style="vertical-align: inherit;"><font style="vertical-align: inherit;">'
+    "內文</font></font></p>",
+)
+# A page that only looks like one: a class that merely contains the word, and a
+# <font> the publisher wrote.
+NOT_TRANSLATED = NEWS_PAGE.replace("<html>", '<html class="untranslated-ltr-theme">').replace(
+    "<p>body</p>", '<p><font color="red">body</font></p>'
+)
+
+
+def _translation(page_html: str):
+    if not (ROOT / "node_modules" / "linkedom").is_dir():
+        pytest.skip("linkedom is not installed")
+    probe_js = (EXTENSION / "identity-probe.js").as_posix()
+    script = f"""
+      import {{ parseHTML }} from "linkedom";
+      import {{ DECLARATION_KEYS, probePageIdentity }} from "{probe_js}";
+      import {{ serializePage }} from "{(EXTENSION / "serialize.js").as_posix()}";
+      import {{ LIMITS }} from "{(EXTENSION / "limits.js").as_posix()}";
+      const {{ document }} = parseHTML({json.dumps(page_html)});
+      globalThis.document = document;
+      globalThis.location = {{ href: "https://news.example/story" }};
+      const saved = serializePage("0123456789abcdef", {{ id: "generic" }}, LIMITS);
+      console.log(JSON.stringify({{
+        preview: probePageIdentity(DECLARATION_KEYS, LIMITS).translated,
+        saved: saved.error || null, html: Boolean(saved.html),
+      }}));
+    """
+    result = subprocess.run(
+        [NODE, "--input-type=module", "--eval", script], capture_output=True, text=True,
+        check=False, cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+@needs_node
+@pytest.mark.parametrize(
+    "page_html", [TRANSLATED_BY_CLASS, TRANSLATED_BY_WRAPPER], ids=["html-class", "font-wrapper"]
+)
+def test_a_page_the_browser_is_translating_is_not_saved_as_the_source(page_html):
+    """A machine translation of the top of an article is not the article."""
+
+    assert _translation(page_html) == {"preview": True, "saved": "page_translated", "html": False}
+
+
+@needs_node
+@pytest.mark.parametrize("page_html", [NEWS_PAGE, NOT_TRANSLATED], ids=["plain", "lookalike"])
+def test_a_page_in_its_own_words_is_saved(page_html):
+    assert _translation(page_html) == {"preview": False, "saved": None, "html": True}
+
+
+def test_the_reader_is_told_how_to_save_a_translated_page():
+    capture = (EXTENSION / "capture.js").read_text(encoding="utf-8")
+    assert "throw new Error(PAGE_REFUSALS[page.error] || page.error)" in capture
+    assert "顯示原文" in capture[capture.index("PAGE_REFUSALS"):capture.index("capturePage(")]
+    panel = (EXTENSION / "sidepanel.js").read_text(encoding="utf-8")
+    assert "pageNote(page.translated ? PAGE_REFUSALS.page_translated" in panel
+
+
 PROBE_PAGE = """<!doctype html><html><head><title>Fallback title</title>
 <meta name="citation_doi" content="10.1123/ijsnem.2026-0001">
 <meta name="citation_title" content="UCI Sports Nutrition Project">
