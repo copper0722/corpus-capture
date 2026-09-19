@@ -248,6 +248,23 @@ export function serializePage(nonce, profile, limits) {
     return [];
   };
   const canonical = document.querySelector('link[rel="canonical"]');
+  // A news page names its byline, day and publisher in JSON-LD and in no
+  // <meta>. Asked only where the <meta> said nothing; never for a DOI. The
+  // preview reads the same way (identity-probe.js).
+  let ldArticle = null;
+  for (const node of [...document.querySelectorAll('script[type="application/ld+json"]')].slice(0, 20)) {
+    let data = null;
+    try { data = JSON.parse(node.textContent || ""); } catch (_) { continue; }
+    ldArticle = [].concat(data || []).flatMap((item) => (item && item["@graph"]) || item)
+      .find((item) => item && typeof item === "object"
+        && [].concat(item["@type"] || []).some((type) => /Article$|^BlogPosting$/.test(String(type))));
+    if (ldArticle) break;
+  }
+  const ldNamed = (value) => [].concat(value || [])
+    .map((item) => String((item && typeof item === "object" ? item.name : item) || "").trim()
+      .slice(0, cap.maxMetaValueChars))
+    .filter(Boolean).slice(0, cap.maxAuthors);
+  const metaAuthors = metaList("citation_author", "dc.creator", "citation_authors");
 
   // The reader's own session decided what this page showed. `login_required` is
   // an OBSERVATION about access, never a statement about the licence: the
@@ -302,13 +319,16 @@ export function serializePage(nonce, profile, limits) {
     canonical_url: (canonical && canonical.href) || "",
     access,
     meta_block: metaBlock,
-    authors: metaList("citation_author", "dc.creator", "citation_authors"),
+    authors: metaAuthors.length ? metaAuthors : ldNamed(ldArticle && ldArticle.author),
     meta: {
+      // `publication_doi`: an Atypon page that is not a journal article (a
+      // Science news story) declares its DOI there and nowhere else.
       doi: metaValue("citation_doi", "dc.identifier", "dc.identifier.doi", "prism.doi",
-                     "bepress_citation_doi"),
+                     "bepress_citation_doi", "publication_doi"),
       title: metaValue("citation_title", "og:title", "dc.title") || document.title || "",
       date_published: metaValue("citation_publication_date", "citation_date",
-                                "article:published_time", "dc.date", "prism.publicationDate"),
+                                "article:published_time", "dc.date", "prism.publicationDate")
+        || String((ldArticle && ldArticle.datePublished) || "").trim(),
     },
     // Everything the corpus records as producer evidence. Empty strings are kept
     // out so the row records "the page did not say" rather than "the page said
@@ -316,7 +336,8 @@ export function serializePage(nonce, profile, limits) {
     publisher_meta: Object.fromEntries(Object.entries({
       title: metaValue("citation_title", "dc.title", "prism.title"),
       journal: metaValue("citation_journal_title", "prism.publicationname", "dc.source"),
-      publisher: metaValue("citation_publisher", "dc.publisher", "prism.corporateentity"),
+      publisher: metaValue("citation_publisher", "dc.publisher", "prism.corporateentity")
+        || ldNamed(ldArticle && ldArticle.publisher)[0] || "",
       publication_date: metaValue("citation_publication_date", "citation_date",
                                   "prism.publicationdate", "dc.date"),
       volume: metaValue("citation_volume", "prism.volume"),

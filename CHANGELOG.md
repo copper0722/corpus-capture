@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Fixed (extension 1.4.1)
+
+- **A Science news story has a DOI.** An Atypon page that is not a journal
+  article declares its DOI as `<meta name="publication_doi">` and carries no
+  `citation_*` at all; the panel said 「頁面無 DOI」 and the capture was sent
+  without one. The key is read by the preview and the serializer alike.
+- **A news page's byline and date.** Where no `<meta>` names an author, a
+  publication date or a publisher, the article's JSON-LD (`author`,
+  `datePublished`, `publisher`) is read instead -- never for a DOI. A declared
+  moment (`2026-09-15T18:45:00.000Z`) is proposed as its day, as the page wrote
+  it.
+- **A settled capture is listed beside its own page only.** The recent captures
+  showed yesterday's admitted article beside every page. A settled capture is
+  now listed only where its DOI or address is the page on screen; one still in
+  flight, or waiting on the reader, is listed everywhere (operator request,
+  2026-09-19).
+
 ### Added (extension 1.4.0)
 
 - **The panel on your reading page.** On a tab whose origin is the configured

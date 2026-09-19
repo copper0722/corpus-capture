@@ -708,6 +708,28 @@ export function mergeReceipt(row, fresh) {
   return { ...(row || {}), ...Object.fromEntries(known) };
 }
 
+//: States a receipt does not leave: the receiver has decided, or the capture
+//: went to disk.
+export const SETTLED_STATES = new Set([
+  "admitted", "duplicate", "supplement_attached", "unsupported", "error", "downloaded",
+]);
+
+const withoutFragment = (url) => String(url || "").split("#")[0];
+
+/**
+ * The receipts worth a line beside `page` -- what the panel is previewing, or
+ * null where there is no article. A settled capture belongs to its page and is
+ * shown only there: beside any other article it says nothing about the page on
+ * screen. One still in flight, or waiting on the reader, is shown everywhere.
+ */
+export function receiptsBeside(rows, page) {
+  const doi = normalizeDoi(page && page.doi);
+  const urls = new Set(((page && page.urls) || []).map(withoutFragment).filter(Boolean));
+  return (rows || []).filter((row) => !SETTLED_STATES.has(row.state)
+    || Boolean(doi && normalizeDoi(row.doi) === doi)
+    || urls.has(withoutFragment(row.url)));
+}
+
 export async function rememberReceipt(entry) {
   const stored = await chrome.storage.local.get([RECEIPTS_KEY]);
   const rows = Array.isArray(stored[RECEIPTS_KEY]) ? stored[RECEIPTS_KEY] : [];

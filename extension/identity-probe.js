@@ -1,15 +1,18 @@
 "use strict";
 
 // The side panel's preview: what the open page declares about its identity,
-// read without capturing anything. Only <meta>, <link rel="canonical"> and the
-// address are touched -- no serialization, no asset fetch -- so it can run on
-// every tab the reader switches to.
+// read without capturing anything. Only <meta>, <link rel="canonical">, the
+// page's JSON-LD and the address are touched -- no serialization, no asset
+// fetch -- so it can run on every tab the reader switches to.
 //
 // The key lists are the serializer's own (serialize.js); a test pins them, so
 // the preview never shows an identity the saved capture would not carry.
 
 export const DECLARATION_KEYS = {
-  doi: ["citation_doi", "dc.identifier", "dc.identifier.doi", "prism.doi", "bepress_citation_doi"],
+  // `publication_doi` is what an Atypon page that is not a journal article
+  // declares: a Science news story carries it and no citation_* at all.
+  doi: ["citation_doi", "dc.identifier", "dc.identifier.doi", "prism.doi", "bepress_citation_doi",
+        "publication_doi"],
   title: ["citation_title", "og:title", "dc.title"],
   date_published: ["citation_publication_date", "citation_date", "article:published_time",
                    "dc.date", "prism.publicationDate"],
@@ -63,13 +66,32 @@ export function probePageIdentity(keys, cap) {
     const value = first(names);
     if (value) publisher[field] = value;
   }
+  // A news page names its byline, day and publisher in JSON-LD and in no
+  // <meta>. Asked only where the <meta> said nothing; never for a DOI.
+  let article = null;
+  for (const node of [...document.querySelectorAll('script[type="application/ld+json"]')].slice(0, 20)) {
+    let data = null;
+    try { data = JSON.parse(node.textContent || ""); } catch (_) { continue; }
+    article = [].concat(data || []).flatMap((item) => (item && item["@graph"]) || item)
+      .find((item) => item && typeof item === "object"
+        && [].concat(item["@type"] || []).some((type) => /Article$|^BlogPosting$/.test(String(type))));
+    if (article) break;
+  }
+  const named = (value) => [].concat(value || [])
+    .map((item) => String((item && typeof item === "object" ? item.name : item) || "").trim()
+      .slice(0, cap.maxMetaValueChars))
+    .filter(Boolean).slice(0, cap.maxAuthors);
+  const authors = list(keys.authors);
+  const ldPublisher = named(article && article.publisher)[0];
+  if (!publisher.publisher && ldPublisher) publisher.publisher = ldPublisher;
   return {
     url: location.href,
     canonical_url: (canonical && canonical.href) || "",
     doi: first(keys.doi),
     title: (first(keys.title) || document.title || "").slice(0, cap.maxTitleChars),
-    date_published: first(keys.date_published).slice(0, 32),
-    authors: list(keys.authors),
+    date_published: (first(keys.date_published) || String((article && article.datePublished) || "").trim())
+      .slice(0, 32),
+    authors: authors.length ? authors : named(article && article.author),
     publisher_meta: publisher,
   };
 }

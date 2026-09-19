@@ -18,6 +18,7 @@
 import { safeReaderUrl } from "./net-policy.js";
 import {
   EXTENSION_VERSION,
+  SETTLED_STATES as SETTLED,
   finalizeCapture,
   listReceipts,
   lookupIdentity,
@@ -27,6 +28,7 @@ import {
   profileForUrl,
   profileRegistry,
   readReceipt,
+  receiptsBeside,
   rememberReceipt,
   reviewEnabled,
   settings,
@@ -80,9 +82,6 @@ const STATE_LABEL = {
 const BAD_STATES = new Set(["needs_identity_review", "needs_proxy", "unsupported", "error", "unknown"]);
 const REVIEW_LABEL = { confirmed: "身分已確認", corrected: "身分已修正" };
 const ROW_MARK = { captured: "✓", duplicate: "重複", failed: "缺" };
-const SETTLED = new Set([
-  "admitted", "duplicate", "supplement_attached", "unsupported", "error", "downloaded",
-]);
 const SOURCE_LABEL = {
   page: "頁面", registry: "登記", corpus: "corpus",
   crossref: "Crossref", openalex: "OpenAlex", receiver: "接收端",
@@ -179,6 +178,7 @@ async function showTab() {
     leaveReader();
     setMode("idle");
     pageNote("非文章頁");
+    await renderReceipts();
     return;
   }
   if (isReceiverPage(tab.url, await receiverBase())) {
@@ -192,6 +192,7 @@ async function showTab() {
   pageNote("");
   await showBadge(tab);
   await ensurePreview(tab);
+  await renderReceipts();
 }
 
 // The same page keeps what the reader already typed, and a page being read is
@@ -561,6 +562,7 @@ async function readPreview(tab, mine) {
     preview = null;
     $("#review").hidden = true;
     pageNote(`讀不到這個頁面（${error.message}）；重新整理後再試。`);
+    await renderReceipts();
     return;
   }
   if (mine !== generation) return;
@@ -568,9 +570,11 @@ async function readPreview(tab, mine) {
   const proposal = mergeProposal(pageMeta, null);
   preview = {
     tabId: tab.id, url: tab.url, generation: mine, touched: new Set(),
-    detectedDoi: page.doi, pageMeta,
+    detectedDoi: page.doi, pageUrls: [page.url, page.final_url], pageMeta,
     baseline: { doi: page.doi, metadata: proposal.values },
   };
+  // The previous page's settled captures leave with it, before the lookup.
+  renderReceipts();
   const input = $("#doi");
   input.value = page.doi || "";
   input.setCustomValidity("");
@@ -718,6 +722,17 @@ function receiptItem(row) {
   return item;
 }
 
+// Only the receipts that say something beside the page on screen: its own, and
+// any still in flight. Yesterday's admitted article is not news on today's page
+// (operator request, 2026-09-19).
+async function renderReceipts() {
+  const rows = await listReceipts();
+  // Read after the wait, so the last call to finish shows the page now on screen.
+  const page = preview ? { doi: preview.detectedDoi, urls: preview.pageUrls } : null;
+  $("#receipts").replaceChildren(...receiptsBeside(rows, page).slice(0, RECEIPTS_SHOWN).map(receiptItem));
+  return rows;
+}
+
 async function refreshReceipts() {
   await receiverBase();
   for (const row of (await listReceipts()).filter((r) => r.receipt_id && !SETTLED.has(r.state))) {
@@ -725,8 +740,7 @@ async function refreshReceipts() {
       await rememberReceipt(mergeReceipt(row, await readReceipt(row.receipt_id)));
     } catch (_) { /* a failed poll says nothing about the capture */ }
   }
-  const rows = await listReceipts();
-  $("#receipts").replaceChildren(...rows.slice(0, RECEIPTS_SHOWN).map(receiptItem));
+  const rows = await renderReceipts();
   const waiting = rows.some((row) => row.receipt_id && !SETTLED.has(row.state));
   if (waiting && !pollTimer) pollTimer = setInterval(refreshReceipts, 5000);
   if (!waiting && pollTimer) {

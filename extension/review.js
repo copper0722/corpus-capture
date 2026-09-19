@@ -80,12 +80,14 @@ export function assignedEnumeration(volume, issue) {
 }
 
 /**
- * A day written the way Google Scholar asks pages to write it (2026/09/15),
- * as an ISO date. Anything that is not a whole, real day is returned as given.
+ * A day written the way Google Scholar asks pages to write it (2026/09/15), or
+ * a moment a news page declares (2026-09-15T18:45:00.000Z), as an ISO date: the
+ * day as the page wrote it, never shifted to another time zone. Anything that
+ * is not a whole, real day is returned as given.
  */
 export function isoDay(value) {
   const text = clip(value);
-  const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(text);
+  const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[T ]\d{1,2}:\d{2}\S*)?$/.exec(text);
   if (!match) return text;
   const [year, month, day] = match.slice(1).map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));

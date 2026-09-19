@@ -254,6 +254,142 @@ def test_the_identity_step_is_documented_on_both_sides():
     assert "/api/v1/capture/identity?doi=" in (EXTENSION / "capture.js").read_text(encoding="utf-8")
 
 
+# What a Science news story declares: no citation_* at all, the DOI under
+# `publication_doi`, and the byline, moment and publisher only in JSON-LD beside
+# a breadcrumb list and a block that does not parse.
+NEWS_PAGE = """<!doctype html><html><head><title>Fallback title</title>
+<meta property="og:type" content="article">
+<meta property="og:title" content="A synthetic news story">
+<meta name="publication_doi" content="10.1126/science.z000000">
+<link rel="canonical" href="https://news.example/content/article/a-synthetic-news-story">
+<script type="application/ld+json">{ not json</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList",
+ "name": "Breadcrumbs", "author": {"name": "Nobody"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "NewsArticle",
+ "author": [{"@type": "Person", "name": "Ada Lovelace"}, "Grace Hopper", {"@type": "Person"}],
+ "publisher": {"@type": "Organization", "name": "A Synthetic Society"},
+ "headline": "A synthetic news story", "datePublished": "2026-09-15T18:45:00.000Z"}</script>
+</head><body><article><p>body</p></article></body></html>"""
+
+# The same story on a page whose <meta> does speak: the JSON-LD is not asked.
+DECLARED_NEWS_PAGE = NEWS_PAGE.replace(
+    '<meta name="publication_doi"',
+    '<meta name="citation_author" content="Meta Author">'
+    '<meta name="citation_publication_date" content="2026/09/14">'
+    '<meta name="citation_publisher" content="Meta Publisher">'
+    '<meta name="publication_doi"',
+)
+
+
+def _declared(page_html: str):
+    """What the preview and the saved capture each read from one page."""
+
+    if not (ROOT / "node_modules" / "linkedom").is_dir():
+        pytest.skip("linkedom is not installed")
+    probe_js = (EXTENSION / "identity-probe.js").as_posix()
+    address = "https://news.example/content/article/a-synthetic-news-story"
+    script = f"""
+      import {{ parseHTML }} from "linkedom";
+      import {{ DECLARATION_KEYS, probePageIdentity }} from "{probe_js}";
+      import {{ serializePage }} from "{(EXTENSION / "serialize.js").as_posix()}";
+      import {{ LIMITS }} from "{(EXTENSION / "limits.js").as_posix()}";
+      const {{ document }} = parseHTML({json.dumps(page_html)});
+      globalThis.document = document;
+      globalThis.location = {{ href: "{address}" }};
+      const probe = probePageIdentity(DECLARATION_KEYS, LIMITS);
+      const saved = serializePage("0123456789abcdef", {{ id: "generic" }}, LIMITS);
+      const pick = (doi, date, authors, publisher) => ({{ doi, date, authors, publisher }});
+      console.log(JSON.stringify({{
+        error: saved.error || null,
+        preview: pick(probe.doi, probe.date_published, probe.authors,
+                      probe.publisher_meta.publisher || ""),
+        saved: pick(saved.meta.doi, saved.meta.date_published, saved.authors,
+                    saved.publisher_meta.publisher || ""),
+      }}));
+    """
+    result = subprocess.run(
+        [NODE, "--input-type=module", "--eval", script], capture_output=True, text=True,
+        check=False, cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+@needs_node
+def test_a_news_page_is_read_where_it_declares_itself():
+    """`publication_doi` and JSON-LD, by the preview and the saved capture alike."""
+
+    declared = _declared(NEWS_PAGE)
+    assert declared["error"] is None
+    assert declared["preview"] == {
+        "doi": "10.1126/science.z000000",
+        "date": "2026-09-15T18:45:00.000Z",
+        "authors": ["Ada Lovelace", "Grace Hopper"],
+        "publisher": "A Synthetic Society",
+    }
+    assert declared["saved"] == declared["preview"]
+
+
+@needs_node
+def test_json_ld_is_asked_only_where_the_meta_said_nothing():
+    declared = _declared(DECLARED_NEWS_PAGE)
+    assert declared["preview"] == {
+        "doi": "10.1126/science.z000000",
+        "date": "2026/09/14",
+        "authors": ["Meta Author"],
+        "publisher": "Meta Publisher",
+    }
+    assert declared["saved"] == declared["preview"]
+
+
+@needs_node
+def test_a_declared_moment_is_proposed_as_its_day():
+    days = _run(
+        "console.log(JSON.stringify(['2026-09-15T18:45:00.000Z', '2026-09-15T14:45:00-04:00',"
+        " '2026/9/5', '2026-02-31T10:00:00Z', '2026-09-15Tjunk', '2026'].map(review.isoDay)));"
+    )
+    assert days == ["2026-09-15", "2026-09-15", "2026-09-05",
+                    "2026-02-31T10:00:00Z", "2026-09-15Tjunk", "2026"]
+    page = _run(
+        "console.log(JSON.stringify(review.pageMetadata("
+        "{date_published: '2026-09-15T18:45:00.000Z', publisher_meta: {}})));"
+    )
+    assert page["published"] == "2026-09-15"
+
+
+@needs_node
+def test_a_settled_capture_is_listed_beside_its_own_page_only():
+    """Yesterday's admitted article says nothing beside today's page."""
+
+    capture_js = (EXTENSION / "capture.js").as_posix()
+    shown = _run(f"""
+      const {{ receiptsBeside }} = await import("{capture_js}");
+      const rows = [
+        {{receipt_id: "r1", state: "admitted", doi: "10.1123/ijsnem.2026-0001",
+          url: "https://journals.example/view/ijsnem-2026-0001"}},
+        {{receipt_id: "r2", state: "received", doi: null, url: "https://other.example/in-flight"}},
+        {{receipt_id: "r3", state: "needs_identity_review", doi: null, url: "https://other.example/waiting"}},
+        {{receipt_id: "r4", state: "error", doi: null, url: "https://other.example/failed"}},
+        {{receipt_id: null, state: "downloaded", doi: null, url: "https://news.example/story"}},
+      ];
+      const ids = (page) => receiptsBeside(rows, page).map((row) => row.receipt_id || row.state);
+      console.log(JSON.stringify({{
+        elsewhere: ids({{doi: "10.1126/science.z000000", urls: ["https://news.example/other-story"]}}),
+        nowhere: ids(null),
+        byDoi: ids({{doi: "https://doi.org/10.1123/IJSNEM.2026-0001", urls: ["https://mirror.example/x"]}}),
+        byUrl: ids({{doi: null, urls: ["https://news.example/story#comments", ""]}}),
+        failedHere: ids({{doi: null, urls: ["https://other.example/failed"]}}),
+      }}));
+    """)
+    assert shown == {
+        "elsewhere": ["r2", "r3"],
+        "nowhere": ["r2", "r3"],
+        "byDoi": ["r1", "r2", "r3"],
+        "byUrl": ["r2", "r3", "downloaded"],
+        "failedHere": ["r2", "r3", "r4"],
+    }
+
+
 PROBE_PAGE = """<!doctype html><html><head><title>Fallback title</title>
 <meta name="citation_doi" content="10.1123/ijsnem.2026-0001">
 <meta name="citation_title" content="UCI Sports Nutrition Project">

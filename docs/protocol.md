@@ -219,8 +219,8 @@ not "pending" or "processing", which would suggest a worker already holds it.
 
 What the side panel previews before anything is captured: the record the
 receiver resolved for a DOI and whether it already holds the work. The panel
-reads the page's own declarations itself (only `<meta>` and the address), shows
-them at once, and merges this answer in when it arrives.
+reads the page's own declarations itself (only `<meta>`, the article's JSON-LD
+and the address), shows them at once, and merges this answer in when it arrives.
 
 ```json
 {
@@ -361,12 +361,12 @@ single rule to implement:
 | `schema` | `corpus-capture-sidecar-v3` (v2 says nothing about attachments; v1 omits everything below `access`) |
 | `url` / `final_url` | canonical and actual page address |
 | `doi` | what the page declared, normalized; never derived from a filename |
-| `title`, `date_published` | as declared |
+| `title`, `date_published` | as declared; the date from the article's JSON-LD (`datePublished`) when no `<meta>` gives one |
 | `html_sha256`, `html_bytes` | the payload these describe |
 | `payload_name` | the payload this sidecar belongs to |
 | `capture_tool` | producer and version |
 | `publisher_meta` | bounded set of the page's own bibliographic declarations, as printed; a receiver treats a placeholder volume or issue (`-1`, `aop`, `Online First`, a volume of `0`) as absent |
-| `authors` | names in page order |
+| `authors` | names in page order; from the article's JSON-LD (`author`) when no `<meta>` names any |
 | `access` | what the reader's session saw |
 | `meta_sha256` | hash of the normalized meta block |
 | `profile`, `figures` | which profile ran, and the article's figure manifest |

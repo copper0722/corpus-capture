@@ -5,13 +5,12 @@
 // long after the window that submitted it has closed. This worker keeps asking,
 // updates the stored receipt, and marks the toolbar icon when something lands,
 // so reopening the side panel shows the outcome instead of a stale "sent".
-import { listReceipts, mergeReceipt, readReceipt, rememberReceipt } from "./capture.js";
+import {
+  SETTLED_STATES as SETTLED, listReceipts, mergeReceipt, readReceipt, rememberReceipt,
+} from "./capture.js";
 import { CAPTURE_REQUEST_KEY, openCaptureTab } from "./launch.js";
 
 const ALARM = "corpus-capture-poll";
-const SETTLED = new Set([
-  "admitted", "duplicate", "supplement_attached", "unsupported", "error", "downloaded",
-]);
 // Past this the drain is not merely late, it is broken, and repeating the poll
 // forever would hide that behind a spinner instead of leaving evidence.
 const GIVE_UP_MS = 6 * 60 * 60 * 1000;

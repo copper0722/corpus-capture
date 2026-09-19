@@ -394,3 +394,29 @@ def test_the_panel_says_only_what_the_values_do_not():
     for gone in ("已載入${source}", "corpus 已有這篇", "這個分頁不是 http(s) 文章頁",
                  "收據 ${outcome.receiptId}"):
         assert gone not in panel
+
+
+def test_the_recent_captures_follow_the_page_on_screen():
+    """A settled capture is listed beside its own page only (operator request, 2026-09-19)."""
+
+    panel = _read("sidepanel.js")
+    render = panel[panel.index("async function renderReceipts("):
+                   panel.index("async function refreshReceipts(")]
+    assert "receiptsBeside(rows, page).slice(0, RECEIPTS_SHOWN)" in render
+    assert "rows.slice(0, RECEIPTS_SHOWN)" not in panel
+    # The page is the one being previewed: its declared DOI and both addresses.
+    assert "{ doi: preview.detectedDoi, urls: preview.pageUrls }" in render
+    assert "pageUrls: [page.url, page.final_url]" in panel
+    # A new page, a page that is no article and an unreadable page each redraw
+    # the list; without that the last page's captures stay beside the next one.
+    show = panel[panel.index("async function showTab("):
+                 panel.index("async function ensurePreview(")]
+    assert show.count("await renderReceipts();") == 2
+    read = panel[panel.index("async function readPreview("):
+                 panel.index('$("#doi").addEventListener')]
+    assert read.count("renderReceipts();") == 2
+    assert read.index("renderReceipts();\n  const input") < read.index("await lookup(page.doi)")
+    # One list of settled states, for the panel and the worker that polls.
+    assert "SETTLED_STATES as SETTLED" in panel
+    assert "SETTLED_STATES as SETTLED" in _read("service-worker.js")
+    assert "const SETTLED = new Set" not in panel + _read("service-worker.js")
