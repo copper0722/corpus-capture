@@ -457,6 +457,32 @@ def test_the_reader_is_told_how_to_save_a_translated_page():
     assert "pageNote(page.translated ? PAGE_REFUSALS.page_translated" in panel
 
 
+# Science's research pages: no citation_doi, and `dc.Identifier` declared twice --
+# the publisher's own id first, the DOI second.
+TWO_IDENTIFIERS_PAGE = NEWS_PAGE.replace(
+    '<meta name="publication_doi" content="10.1126/science.z000000">',
+    '<meta name="dc.Identifier" scheme="publisher-id" content="z000000">'
+    '<meta name="dc.Identifier" scheme="doi" content="10.1126/science.z000000">',
+)
+NO_DOI_PAGE = NEWS_PAGE.replace(
+    '<meta name="publication_doi" content="10.1126/science.z000000">',
+    '<meta name="dc.Identifier" scheme="publisher-id" content="z000000">',
+)
+
+
+@needs_node
+def test_the_declared_doi_is_the_first_value_that_is_a_doi():
+    declared = _declared(TWO_IDENTIFIERS_PAGE)
+    assert declared["preview"]["doi"] == "10.1126/science.z000000"
+    assert declared["saved"]["doi"] == "10.1126/science.z000000"
+
+
+@needs_node
+def test_an_identifier_that_is_not_a_doi_is_never_offered_as_one():
+    declared = _declared(NO_DOI_PAGE)
+    assert declared["preview"]["doi"] == "" and declared["saved"]["doi"] == ""
+
+
 PROBE_PAGE = """<!doctype html><html><head><title>Fallback title</title>
 <meta name="citation_doi" content="10.1123/ijsnem.2026-0001">
 <meta name="citation_title" content="UCI Sports Nutrition Project">

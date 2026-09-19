@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed (extension 1.4.4)
+
+- **The declared DOI is the first value that is a DOI.** Science declares
+  `dc.Identifier` twice, the publisher's own id (`aec6129`) and then the DOI.
+  The first value of the first matching key was taken, it was not a DOI, and
+  the identity fell back to the address («DOI 由 canonical 網址推得») on a page
+  that declares its DOI outright. Every declared value is now tried, in key
+  order, by the preview and the serializer alike.
+
 ### Added (extension 1.4.3, figure selection)
 
 - **The visual abstract is a figure.** A figure element the page captions

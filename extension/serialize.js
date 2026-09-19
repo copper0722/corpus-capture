@@ -259,6 +259,17 @@ export function serializePage(nonce, profile, limits) {
     }
     return "";
   };
+  // The first declared value that IS a DOI, not the first value of the first
+  // key: Science declares `dc.Identifier` twice -- the publisher's own id
+  // ("aec6129") and then the DOI. The preview picks the same way.
+  const metaDoi = (...names) => {
+    for (const name of names) {
+      for (const value of declared.get(name.toLowerCase()) || []) {
+        if (/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*|info:doi\/)?10\.\d{4,9}\/\S+$/i.test(value)) return value;
+      }
+    }
+    return "";
+  };
   const metaList = (...names) => {
     for (const name of names) {
       const values = declared.get(name.toLowerCase());
@@ -342,8 +353,8 @@ export function serializePage(nonce, profile, limits) {
     meta: {
       // `publication_doi`: an Atypon page that is not a journal article (a
       // Science news story) declares its DOI there and nowhere else.
-      doi: metaValue("citation_doi", "dc.identifier", "dc.identifier.doi", "prism.doi",
-                     "bepress_citation_doi", "publication_doi"),
+      doi: metaDoi("citation_doi", "dc.identifier", "dc.identifier.doi", "prism.doi",
+                   "bepress_citation_doi", "publication_doi"),
       title: metaValue("citation_title", "og:title", "dc.title") || document.title || "",
       date_published: metaValue("citation_publication_date", "citation_date",
                                 "article:published_time", "dc.date", "prism.publicationDate")

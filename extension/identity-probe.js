@@ -60,6 +60,18 @@ export function probePageIdentity(keys, cap) {
     }
     return [];
   };
+  // The first declared value that IS a DOI, not the first value of the first
+  // key: Science declares `dc.Identifier` twice -- the publisher's own id
+  // ("aec6129") and then the DOI -- and taking the first one left the DOI to be
+  // guessed from the address.
+  const declaredDoi = (names) => {
+    for (const name of names) {
+      for (const value of declared.get(name.toLowerCase()) || []) {
+        if (/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*|info:doi\/)?10\.\d{4,9}\/\S+$/i.test(value)) return value;
+      }
+    }
+    return "";
+  };
   const canonical = document.querySelector('link[rel="canonical"]');
   const publisher = {};
   for (const [field, names] of Object.entries(keys.publisher_meta)) {
@@ -90,7 +102,7 @@ export function probePageIdentity(keys, cap) {
     // The serializer refuses a page the browser is translating; same test.
     translated: /\btranslated-(ltr|rtl)\b/.test(document.documentElement.className || "")
       || Boolean(document.querySelector('font[style*="vertical-align: inherit"]')),
-    doi: first(keys.doi),
+    doi: declaredDoi(keys.doi),
     title: (first(keys.title) || document.title || "").slice(0, cap.maxTitleChars),
     date_published: (first(keys.date_published) || String((article && article.datePublished) || "").trim())
       .slice(0, 32),
