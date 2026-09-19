@@ -457,8 +457,16 @@ def test_the_reader_is_told_how_to_save_a_translated_page():
     assert "pageNote(page.translated ? PAGE_REFUSALS.page_translated" in panel
 
 
-# Science's research pages: no citation_doi, and `dc.Identifier` declared twice --
-# the publisher's own id first, the DOI second.
+# A Science research page, as measured on the stored capture and the live page:
+# no citation_doi; `dc.Identifier` is the publisher's own id; the DOI sits under
+# `publication_doi`, a LATER key, so the id used to shadow it.
+SHADOWED_DOI_PAGE = NEWS_PAGE.replace(
+    '<meta name="publication_doi" content="10.1126/science.z000000">',
+    '<meta name="dc.Identifier" scheme="publisher-id" content="z000000">'
+    '<meta name="publication_doi" content="10.1126/science.z000000">',
+)
+# The same rule inside one key: two values, the DOI second. Not measured on a
+# publisher; it is the generalization the picker makes.
 TWO_IDENTIFIERS_PAGE = NEWS_PAGE.replace(
     '<meta name="publication_doi" content="10.1126/science.z000000">',
     '<meta name="dc.Identifier" scheme="publisher-id" content="z000000">'
@@ -471,8 +479,10 @@ NO_DOI_PAGE = NEWS_PAGE.replace(
 
 
 @needs_node
-def test_the_declared_doi_is_the_first_value_that_is_a_doi():
-    declared = _declared(TWO_IDENTIFIERS_PAGE)
+@pytest.mark.parametrize("page_html", [SHADOWED_DOI_PAGE, TWO_IDENTIFIERS_PAGE],
+                         ids=["later-key", "same-key"])
+def test_the_declared_doi_is_the_first_value_that_is_a_doi(page_html):
+    declared = _declared(page_html)
     assert declared["preview"]["doi"] == "10.1126/science.z000000"
     assert declared["saved"]["doi"] == "10.1126/science.z000000"
 

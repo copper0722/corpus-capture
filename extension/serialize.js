@@ -260,8 +260,9 @@ export function serializePage(nonce, profile, limits) {
     return "";
   };
   // The first declared value that IS a DOI, not the first value of the first
-  // key: Science declares `dc.Identifier` twice -- the publisher's own id
-  // ("aec6129") and then the DOI. The preview picks the same way.
+  // key that has one: a Science research page declares `dc.Identifier` as the
+  // publisher's own id ("aec6129") and the DOI under `publication_doi`, a later
+  // key. The preview picks the same way.
   const metaDoi = (...names) => {
     for (const name of names) {
       for (const value of declared.get(name.toLowerCase()) || []) {

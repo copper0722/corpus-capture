@@ -4,12 +4,15 @@
 
 ### Fixed (extension 1.4.4)
 
-- **The declared DOI is the first value that is a DOI.** Science declares
-  `dc.Identifier` twice, the publisher's own id (`aec6129`) and then the DOI.
-  The first value of the first matching key was taken, it was not a DOI, and
-  the identity fell back to the address («DOI 由 canonical 網址推得») on a page
-  that declares its DOI outright. Every declared value is now tried, in key
-  order, by the preview and the serializer alike.
+- **The declared DOI is the first value that is a DOI.** A Science research
+  page declares `dc.Identifier` as the publisher's own id (`aec6129`) and its
+  DOI under `publication_doi`. The first key that had any value won, its value
+  was not a DOI, and the identity fell back to the address («DOI 由 canonical
+  網址推得») on a page that declares its DOI outright. Every declared value is
+  now tried, in key order, by the preview and the serializer alike. (The first
+  wording of this entry, and of commit 9c3c011, said the page declares
+  `dc.Identifier` twice; it does not -- measured on the stored capture and the
+  live page.)
 
 ### Added (extension 1.4.3, figure selection)
 
