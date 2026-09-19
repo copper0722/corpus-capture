@@ -21,6 +21,8 @@
   </article>
 
   <form id="review" hidden>
+    <p id="known" class="note" hidden></p>
+    <div id="meta">
     <div class="doi">
       <label for="doi">DOI</label>
       <input id="doi" name="doi" type="text" inputmode="url" autocomplete="off"
@@ -35,8 +37,13 @@
     <p id="doi-hint" class="hint" hidden></p>
     <p id="doi-error" class="error-msg">DOI 格式為 10.xxxx/…；沒有請留空</p>
     <p id="meta-status" class="hint" role="status" aria-live="polite" hidden></p>
-    <p id="known" class="note" hidden></p>
     <div id="fields"></div>
+    </div>
+    <section id="note" hidden>
+      <div id="note-body" class="note-body"></div>
+      <textarea id="note-input" name="note" rows="4" maxlength="8000" placeholder="筆記…"
+                aria-label="筆記"></textarea>
+    </section>
     <button id="save" type="submit"
             title="快捷鍵 Alt+Shift+S（Mac：Control+Shift+S）。儲存中請保持側欄開啟。">儲存</button>
   </form>

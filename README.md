@@ -68,6 +68,17 @@ captured, and the previewed values travel to the receiver as `reader_review`,
 an observation the receiver weighs while keeping the page's declarations. The
 keyboard command saves what the preview shows.
 
+### Beside a work you already hold (extension 1.5.0)
+
+When the receiver says it holds the article, the panel shows that one line and
+folds the DOI and the bibliographic fields away behind it; the ▸ beside the line
+opens them. The room goes to your note on that work: what you wrote before, and
+a box for more. With words in the box the button reads 「儲存筆記」 and saving
+appends them to the note -- the receiver does the joining, so a note you also
+edit in your reader is never overwritten. With the box empty the button is the
+ordinary 「儲存」 and captures the page as before. A receiver without the note
+routes simply shows no note area.
+
 ### On your receiver's own reading page (extension 1.4.0)
 
 When the active tab is a page of the receiver itself -- its reading UI -- the

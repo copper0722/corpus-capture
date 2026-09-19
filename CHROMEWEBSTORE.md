@@ -47,6 +47,10 @@ executed.
 - Attachments are fetched with the reader's existing session only from the
   article's own origin; files from a profile-listed media host are fetched
   anonymously.
+- Beside a work the receiver already holds, the panel shows the note the
+  reader keeps on it there and sends what the reader types into the note box to
+  that same receiver, on save. A draft not yet saved lives only in the open
+  panel's memory.
 - On the receiver's own reading page, the panel reads the bibliographic
   `<meta>` that page declares and sends the declared DOI to that receiver's
   lookup; nothing from it is stored or sent anywhere else.
@@ -61,6 +65,7 @@ executed.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.5.0 | 2026-09-19 | Beside a work the receiver already holds, the bibliographic fields fold away behind the line that says so and the panel shows the reader's note on that work with a box to add to it; saving appends the new text at the receiver. No permission change. |
 | 1.4.4 | 2026-09-19 | A page whose earlier identifier key holds something that is not a DOI (Science: a publisher id under dc.Identifier, the DOI under publication_doi) has its declared DOI recognized instead of one inferred from the address. No permission change. |
 | 1.4.3 | 2026-09-19 | A captioned figure inside the article's abstract (a visual or graphical abstract with no figure label) is recorded in the figure manifest. No permission change. |
 | 1.4.2 | 2026-09-19 | A page the browser is translating is refused instead of being saved as a half-translated source; the panel says so and asks the reader to show the original first. No permission change. |

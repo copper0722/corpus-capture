@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added (extension 1.5.0)
+
+- **A held work folds its metadata away.** When the receiver answers that it
+  already holds the article, the panel shows only 「已在庫（儲存將併入）」; the
+  DOI and the bibliographic fields sit behind the ▸ on that line and open on
+  demand. A refused DOI opens them by itself, because a folded field cannot say
+  why it is refused (operator request, 2026-09-19).
+- **The reader's note, beside the article.** The room that frees goes to the
+  note the reader keeps on that work: the note so far, and a box for more. With
+  words in the box the one button reads 「儲存筆記」 and appends them; with the
+  box empty it is the ordinary 「儲存」 and captures the page. Only the new text
+  is sent -- `POST /api/v1/capture/note` -- and the receiver joins it to the note
+  it holds, so a note also edited in a reader is never overwritten by a copy
+  the panel happened to show. A draft survives a look at another tab, and a
+  retry of the same words is the same request. `GET /api/v1/capture/note?doi=`
+  reads the note; a receiver without the routes answers 404 and no note area
+  is shown. The keyboard command saves what the button would.
+
 ### Fixed (extension 1.4.4)
 
 - **The declared DOI is the first value that is a DOI.** A Science research

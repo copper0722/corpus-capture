@@ -420,3 +420,48 @@ def test_the_recent_captures_follow_the_page_on_screen():
     assert "SETTLED_STATES as SETTLED" in panel
     assert "SETTLED_STATES as SETTLED" in _read("service-worker.js")
     assert "const SETTLED = new Set" not in panel + _read("service-worker.js")
+
+
+def test_a_held_work_folds_its_metadata_behind_the_line_that_says_so():
+    """Only 「已在庫」 shows; the fields open on demand (operator request, 2026-09-19)."""
+
+    html = _read("sidepanel.html")
+    form = html[html.index('<form id="review"'):html.index("</form>")]
+    # The line leads the form, and everything that folds is inside one element.
+    assert form.index('id="known"') < form.index('id="meta"') < form.index('class="doi"')
+    meta = form[form.index('<div id="meta">'):form.index('<section id="note"')]
+    folds = ('id="doi"', 'id="doi-hint"', 'id="doi-error"', 'id="meta-status"', 'id="fields"')
+    for folded in folds:
+        assert folded in meta, folded
+    assert 'id="save"' not in meta and 'id="note-input"' not in meta
+    panel = _read("sidepanel.js")
+    known = panel[panel.index("function showKnown("):panel.index("function noteDraft(")]
+    # Held: folded unless the reader opened it for this page. Not held: never folded.
+    assert "setMetaFolded(!(preview && preview.metaOpen));" in known
+    assert known.index("if (!known) {") < known.index("setMetaFolded(false);")
+    assert 'fold.setAttribute("aria-controls", "meta")' in known
+    # A folded field cannot show why it is refused.
+    submit = panel[panel.index('$("#review").addEventListener("submit"'):
+                   panel.index("function renderRows(")]
+    assert submit.index("setMetaFolded(false);") < submit.index('$("#doi").reportValidity();')
+
+
+def test_the_note_is_appended_by_the_receiver_never_concatenated_here():
+    panel = _read("sidepanel.js")
+    save = panel[panel.index("async function saveNote("):panel.index('$("#doi").addEventListener')]
+    assert "appendNote(draft.doi, draft.text.trim(), draft.requestId)" in save
+    assert "body_md +" not in panel and "note-body" in _read("sidepanel.html")
+    # One button: a typed note on a held work is what it saves, else the page.
+    submit = panel[panel.index('$("#review").addEventListener("submit"'):
+                   panel.index("function renderRows(")]
+    assert submit.index("const draft = noteDraft();") < submit.index("review = currentReview();")
+    keyboard = panel[panel.index("async function takeCaptureRequest("):]
+    assert keyboard.index("const draft = noteDraft();") < keyboard.index("await startCapture(")
+    assert '? "儲存筆記" : "儲存"' in panel
+    # The words outlive a look at another tab, and a failed save keeps them.
+    assert "const noteDrafts = new Map();" in panel
+    assert save.index("noteDrafts.delete(draft.doi);") < save.index("} catch (error) {")
+    protocol = (ROOT / "docs" / "protocol.md").read_text(encoding="utf-8")
+    heading = "## `GET /api/v1/capture/note?doi=` and `POST /api/v1/capture/note` (optional)"
+    assert heading in protocol
+

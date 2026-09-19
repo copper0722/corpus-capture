@@ -238,6 +238,30 @@ A receiver without it answers 404, and the preview shows the page alone. When
 the reader saves, the previewed (and corrected) values travel as
 `reader_review` with finalize.
 
+## `GET /api/v1/capture/note?doi=` and `POST /api/v1/capture/note` (optional)
+
+The reader's own note on a work the receiver already holds. Beside such a work
+the side panel folds the bibliographic fields away behind the line that says
+the work is held, shows the note, and takes more of it.
+
+```json
+GET  -> { "doi": "10.1126/science.aec6129", "held": true, "exists": true,
+          "body_md": "…", "revision": 4, "updated_at": "2026-09-19T03:00:00Z" }
+POST <- { "doi": "10.1126/science.aec6129", "append_md": "what the reader typed",
+          "request_id": "a uuid the panel keeps with those words" }
+POST -> the same shape as GET, plus "changed" and "replayed"
+```
+
+The panel sends only the new text. The receiver joins it to the note it holds
+(one blank line between), because the reader may edit the same note elsewhere
+and a body concatenated in the panel would overwrite that. A repeated
+`request_id` adds nothing and answers `"replayed": true`. `held: false` means
+there is no work for a note to belong to; an append for such a DOI is `409
+work_not_held`, a body past the receiver's limit `422 note_too_long`. A
+receiver without these routes answers 404 and the panel shows no note area. A
+note is the reader's text: it is sent to the configured receiver and nowhere
+else, and it is not part of the capture, the sidecar or the envelope.
+
 ## `GET /api/v1/intake/{receipt_id}/identity`
 
 What the reader reviews before finalize. `?doi=` looks up a DOI the reader

@@ -543,6 +543,51 @@ export async function lookupIdentity(doi) {
 }
 
 /**
+ * The reader's note on the work a DOI names. `null` when the receiver keeps no
+ * notes (404/405); the panel then shows no note area at all.
+ */
+export async function readNote(doi) {
+  const { apiBase, serviceToken } = await settings();
+  const response = await apiFetch(
+    `/api/v1/capture/note?doi=${encodeURIComponent(doi)}`, { apiBase, serviceToken }
+  );
+  if (response.status === 404 || response.status === 405) return null;
+  let payload = null;
+  try { payload = await response.json(); } catch (_) { /* keep the status */ }
+  if (!response.ok) {
+    const error = new Error(describeRefusal(payload, response.status));
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+/**
+ * Append what the reader typed to the held work's note. Only the new text is
+ * sent: the receiver joins it to the note it holds, so a note the reader also
+ * edits elsewhere is never overwritten by a copy this panel happened to show.
+ * `requestId` makes a repeated send add nothing.
+ */
+export async function appendNote(doi, text, requestId) {
+  const { apiBase, serviceToken } = await settings();
+  const response = await apiFetch("/api/v1/capture/note", {
+    apiBase,
+    serviceToken,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doi, append_md: text, request_id: requestId }),
+  });
+  let payload = null;
+  try { payload = await response.json(); } catch (_) { /* keep the status */ }
+  if (!response.ok) {
+    const error = new Error(describeRefusal(payload, response.status));
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+/**
  * Hand one attachment's bytes to the receiver, beside the held capture.
  *
  * Raw bytes in the body, the description in one header: a JSON envelope

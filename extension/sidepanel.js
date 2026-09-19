@@ -20,6 +20,7 @@ import {
   EXTENSION_VERSION,
   PAGE_REFUSALS,
   SETTLED_STATES as SETTLED,
+  appendNote,
   finalizeCapture,
   listReceipts,
   lookupIdentity,
@@ -28,6 +29,7 @@ import {
   probeTab,
   profileForUrl,
   profileRegistry,
+  readNote,
   readReceipt,
   receiptsBeside,
   rememberReceipt,
@@ -109,6 +111,10 @@ let follow = null;
 let staleTimer = 0;
 // The receiver's answer per DOI, so paging back and forth in the reader asks once.
 const identities = new Map();
+// What the reader has typed and not yet saved, per DOI: a look at another tab
+// must not cost a half-written note. `requestId` stays with the text, so a
+// retry of the same words is the same request and adds nothing twice.
+const noteDrafts = new Map();
 
 // ---------------------------------------------------------------- the tab --
 
@@ -486,15 +492,116 @@ function metaStatus(text) {
   $("#meta-status").hidden = !text;
 }
 
+// A work the corpus already holds needs no review of its metadata: the line
+// that says so is all that shows, the fields fold away behind it, and the room
+// goes to the reader's note (operator request, 2026-09-19).
+function setMetaFolded(folded) {
+  $("#meta").hidden = folded;
+  const fold = $("#known .fold");
+  if (fold) {
+    fold.textContent = folded ? "▸" : "▾";
+    fold.setAttribute("aria-expanded", String(!folded));
+  }
+}
+
 function showKnown(identity) {
   const known = identity && identity.known;
   const note = $("#known");
   note.replaceChildren();
   note.hidden = !known;
-  if (!known) return;
-  note.append(document.createTextNode("已在庫（儲存將併入）"));
+  if (preview) preview.heldDoi = known ? normalizeDoi(identity.doi) : null;
+  if (!known) {
+    setMetaFolded(false);
+    showNote(null);
+    return;
+  }
+  const fold = document.createElement("button");
+  fold.type = "button";
+  fold.className = "icon fold";
+  fold.title = "書目資料";
+  fold.setAttribute("aria-label", "書目資料");
+  fold.setAttribute("aria-controls", "meta");
+  fold.addEventListener("click", () => {
+    if (preview) preview.metaOpen = $("#meta").hidden;
+    setMetaFolded(!$("#meta").hidden);
+  });
+  const text = document.createElement("span");
+  text.textContent = "已在庫（儲存將併入）";
+  note.append(fold, text);
   const reader = safeReaderUrl(known.reader_url, apiOrigin);
-  if (reader) note.append(document.createTextNode(" "), link(reader, "開啟", "在 Reader 開啟"));
+  if (reader) note.append(link(reader, "開啟", "在 Reader 開啟"));
+  setMetaFolded(!(preview && preview.metaOpen));
+  loadNote(preview && preview.heldDoi);
+}
+
+// ------------------------------------------------------------------ the note --
+
+function noteDraft() {
+  const doi = preview && preview.heldDoi;
+  const draft = doi ? noteDrafts.get(doi) : null;
+  return draft && draft.text.trim() ? { doi, ...draft } : null;
+}
+
+function updateSaveLabel() {
+  $("#save").textContent = noteDraft() ? "儲存筆記" : "儲存";
+}
+
+// `held` is the receiver's answer for this DOI, or null where there is no note
+// to show: a work not held, or a receiver that keeps no notes.
+function showNote(held) {
+  const box = $("#note");
+  box.hidden = !held;
+  $("#note-body").textContent = held ? (held.body_md || "") : "";
+  const draft = held && noteDrafts.get(held.doi);
+  $("#note-input").value = draft ? draft.text : "";
+  updateSaveLabel();
+}
+
+async function loadNote(doi) {
+  if (!doi || !preview) return showNote(null);
+  const mine = preview.generation;
+  let held = null;
+  try {
+    held = await readNote(doi);
+  } catch (_) {
+    held = null;
+  }
+  if (!preview || preview.generation !== mine || preview.heldDoi !== doi) return undefined;
+  return showNote(held && held.held ? { ...held, doi } : null);
+}
+
+$("#note-input").addEventListener("input", () => {
+  const doi = preview && preview.heldDoi;
+  if (!doi) return;
+  const text = $("#note-input").value;
+  const before = noteDrafts.get(doi);
+  if (!text.trim()) noteDrafts.delete(doi);
+  else if (!before || before.text !== text) noteDrafts.set(doi, { text, requestId: crypto.randomUUID() });
+  updateSaveLabel();
+});
+
+async function saveNote(draft) {
+  if (running) return;
+  setBusy(true);
+  $("#run").hidden = false;
+  $("#rows").replaceChildren();
+  $("#result").textContent = "";
+  $("#result").className = "";
+  $("#status").textContent = "儲存筆記中…";
+  try {
+    const saved = await appendNote(draft.doi, draft.text.trim(), draft.requestId);
+    noteDrafts.delete(draft.doi);
+    if (preview && preview.heldDoi === draft.doi) showNote({ ...saved, held: true, doi: draft.doi });
+    $("#status").textContent = "筆記已併入";
+  } catch (error) {
+    // The words stay in the box, and the same request id goes with a retry.
+    $("#status").textContent = "失敗";
+    $("#result").textContent = String((error && error.message) || error);
+    $("#result").className = "error";
+  } finally {
+    setBusy(false);
+    updateSaveLabel();
+  }
 }
 
 const LOOKUP_NOTE = {
@@ -616,10 +723,17 @@ function currentReview() {
 $("#review").addEventListener("submit", (event) => {
   event.preventDefault();
   if (!preview || running) return;
+  const draft = noteDraft();
+  if (draft) {
+    saveNote(draft);
+    return;
+  }
   let review;
   try {
     review = currentReview();
   } catch (_) {
+    // A folded field cannot show why it is refused.
+    setMetaFolded(false);
     $("#doi").setCustomValidity("DOI 格式為 10.xxxx/…；沒有請留空");
     $("#doi").reportValidity();
     return;
@@ -764,6 +878,11 @@ async function takeCaptureRequest() {
   // The keyboard saves what the preview shows: read it first if it is not.
   await ensurePreview(tab);
   if (!preview || preview.tabId !== tab.id) return;
+  const draft = noteDraft();
+  if (draft) {
+    await saveNote(draft);
+    return;
+  }
   let review;
   try {
     review = currentReview();

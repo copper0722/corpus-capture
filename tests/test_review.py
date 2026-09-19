@@ -493,6 +493,51 @@ def test_an_identifier_that_is_not_a_doi_is_never_offered_as_one():
     assert declared["preview"]["doi"] == "" and declared["saved"]["doi"] == ""
 
 
+@needs_node
+def test_the_note_calls_send_only_what_was_typed_and_a_receiver_without_notes_is_not_an_error():
+    capture_js = (EXTENSION / "capture.js").as_posix()
+    seen = _run(f"""
+      const calls = [];
+      globalThis.chrome = {{ storage: {{ local: {{ get: async () => (
+        {{ apiBase: "https://receiver.example", serviceToken: "token" }}) }} }} }};
+      const answers = [
+        {{ status: 200, body: {{ doi: "10.1/x", held: true, exists: true, body_md: "old",
+                                 revision: 2 }} }},
+        {{ status: 404, body: {{ detail: "Not Found" }} }},
+        {{ status: 200, body: {{ doi: "10.1/x", held: true, exists: true,
+                                 body_md: "old\\n\\nnew", revision: 3,
+                                 changed: true, replayed: false }} }},
+        {{ status: 409, body: {{ detail: "work_not_held" }} }},
+      ];
+      globalThis.fetch = async (url, init) => {{
+        calls.push({{ url, method: init.method || "GET", body: init.body || null,
+                     token: init.headers["x-corpus-service-token"], redirect: init.redirect,
+                     credentials: init.credentials }});
+        const answer = answers.shift();
+        return {{ ok: answer.status < 400, status: answer.status, url, redirected: false,
+                 json: async () => answer.body }};
+      }};
+      const {{ readNote, appendNote }} = await import("{capture_js}");
+      const read = await readNote("10.1/x");
+      const none = await readNote("10.1/x");
+      const saved = await appendNote("10.1/x", "new", "req-1");
+      let refused = null;
+      try {{ await appendNote("10.1/y", "new", "req-2"); }} catch (error) {{
+        refused = [error.status, error.message];
+      }}
+      console.log(JSON.stringify(
+        {{ read: read.body_md, none, saved: saved.body_md, refused, calls }}));
+    """)
+    assert seen["read"] == "old" and seen["none"] is None
+    assert seen["saved"] == "old\n\nnew" and seen["refused"] == [409, "work_not_held"]
+    first, _, post, _ = seen["calls"]
+    assert first["url"] == "https://receiver.example/api/v1/capture/note?doi=10.1%2Fx"
+    assert (first["method"], first["token"], first["redirect"], first["credentials"]) == (
+        "GET", "token", "error", "omit")
+    assert post["method"] == "POST"
+    assert json.loads(post["body"]) == {"doi": "10.1/x", "append_md": "new", "request_id": "req-1"}
+
+
 PROBE_PAGE = """<!doctype html><html><head><title>Fallback title</title>
 <meta name="citation_doi" content="10.1123/ijsnem.2026-0001">
 <meta name="citation_title" content="UCI Sports Nutrition Project">

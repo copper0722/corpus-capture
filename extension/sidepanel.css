@@ -76,6 +76,18 @@ input:user-invalid { border-color: var(--bad); }
 .alt { margin: 0; font-size: .75rem; color: var(--muted); display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 .alt span { overflow-wrap: anywhere; }
 #save { margin-top: 4px; }
+/* A held work: its metadata folds away behind the line that says so. */
+#meta { display: flex; flex-direction: column; gap: 6px; }
+#known { display: flex; gap: 6px; align-items: center; }
+#known .fold { inline-size: 24px; block-size: 24px; min-block-size: 24px; font-size: .8rem; border: 0; }
+#known span { flex: 1; }
+#note { display: flex; flex-direction: column; gap: 6px; }
+.note-body {
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; max-block-size: 40vh;
+  overflow: auto; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+}
+.note-body:empty { display: none; }
+#note-input { min-block-size: 5.5em; }
 
 /* A capture in progress, and the ones before it. */
 #status { margin: 0; font-weight: 600; white-space: pre-line; font-size: .9rem; }
