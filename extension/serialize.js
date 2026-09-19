@@ -39,6 +39,13 @@ export function serializePage(nonce, profile, limits) {
   const figureSelectors = sel("figure_selectors", ["figure", ".figure", ".article-figure"]);
   const captionSelectors = sel("caption_selectors", ["figcaption", ".caption"]);
   const dropSelectors = sel("drop_selectors", []);
+  // An asset whose PATH says the publisher did not number it (Elsevier `-fx`):
+  // profile data, the twin of figure_manifest.is_unnumbered_asset().
+  const unnumberedPatterns = sel("unnumbered_asset_patterns", []);
+  const isUnnumbered = (url) => {
+    const lowered = String(url || "").toLowerCase();
+    return unnumberedPatterns.some((pattern) => pattern && lowered.includes(String(pattern).toLowerCase()));
+  };
 
   // The article container is the boundary that keeps the adverts out. Picking
   // images by SIZE instead returned five promos and zero figures on the page
@@ -65,9 +72,16 @@ export function serializePage(nonce, profile, limits) {
   const ID_LABEL = /^(figure|fig|f|table|tbl|tab|t)[-_]?(\d+)$/i;
   const KIND = { f: "Figure", fig: "Figure", figure: "Figure",
                  t: "Table", tab: "Table", tbl: "Table", table: "Table" };
-  const labelFor = (elementId, alt, caption) => {
+  const BARE_KINDS = new Set(Object.values(KIND));
+  // `numbered === false`: the id's digits are an internal counter, so the id may
+  // say this IS a figure and may not say which one. A number nobody can see is
+  // worse than no number, because a reader cites it.
+  const labelFor = (elementId, alt, caption, numbered = true) => {
     const byId = ID_LABEL.exec(String(elementId || "").trim());
-    if (byId) return KIND[byId[1].toLowerCase()] + " " + parseInt(byId[2], 10);
+    if (byId) {
+      const kind = KIND[byId[1].toLowerCase()];
+      return numbered ? kind + " " + parseInt(byId[2], 10) : kind;
+    }
     for (const text of [alt, caption]) {
       const found = LABEL.exec(String(text || "").trim());
       if (!found) continue;
@@ -163,7 +177,13 @@ export function serializePage(nonce, profile, limits) {
     const caption = captionOf(node);
     const alt = (img.getAttribute("alt") || "").trim().slice(0, cap.maxAltChars);
     const elementId = (node.id || img.id || "").trim();
-    let label = labelFor(elementId, alt, caption);
+    const unnumbered = isUnnumbered(img.currentSrc || img.src || "");
+    let label = labelFor(elementId, alt, caption, !unnumbered);
+    // A publisher-marked figure served from the unnumbered series is a display
+    // item whatever its id spells: ScienceDirect keys them `undfig1`, with no
+    // caption and an empty alt. An unlabelled figure with an ordinary asset is
+    // still the boxed-text case and stays out.
+    if (!label && rank === 0 && unnumbered) label = KIND.figure;
     // The visual abstract: a figure element the page captions inside its
     // abstract, with no "Fig." anywhere (Science's `<figure id="Fa">`).
     if (!label && rank === 0 && caption && inAbstract(node)) label = "Graphical abstract";
@@ -193,12 +213,15 @@ export function serializePage(nonce, profile, limits) {
   // One label, one figure. A table rendered twice -- in the body and as a rail
   // thumbnail -- carries the same alt on both, and listing it twice makes the
   // manifest disagree with the article.
+  // A label without a number names a kind, not an item: three unnumbered
+  // figures are all "Figure". For those the asset is the identity.
   const bestByLabel = new Map();
   for (const row of figureRows) {
-    const current = bestByLabel.get(row.label);
+    const key = BARE_KINDS.has(row.label) ? row.label + "\u0000" + row.asset_url : row.label;
+    const current = bestByLabel.get(key);
     if (!current || row.rank < current.rank
         || (row.rank === current.rank && row.caption.length > current.caption.length)) {
-      bestByLabel.set(row.label, row);
+      bestByLabel.set(key, row);
     }
   }
   const figureManifest = [...bestByLabel.values()]

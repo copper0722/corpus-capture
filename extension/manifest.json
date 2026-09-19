@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Corpus Capture",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "把目前這篇文章頁（含圖片）連同 PDF、supplement、音訊與影片附件，一鍵存入 corpus 的同一個 bundle；側欄可先確認並修正 DOI 與書目資料，在 corpus 的閱讀頁則顯示該篇的書目資料。",
   "permissions": [
     "activeTab",

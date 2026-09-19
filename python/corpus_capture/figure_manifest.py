@@ -74,6 +74,9 @@ _ID_LABEL_RE = re.compile(
 )
 _KIND_WORDS = {"f": "Figure", "fig": "Figure", "figure": "Figure",
                "t": "Table", "tab": "Table", "tbl": "Table", "table": "Table"}
+#: Labels that name a kind and no item ("Figure", "Table"): what an unnumbered
+#: display item is called. Never unique by themselves.
+_BARE_KIND_LABELS = frozenset(_KIND_WORDS.values())
 #: What an unlabelled, captioned figure inside the abstract is called.
 GRAPHICAL_ABSTRACT_LABEL = "Graphical abstract"
 #: An ancestor that says "this is the abstract": Atypon's `#abstracts` and
@@ -375,12 +378,24 @@ def build_figure_manifest(
         alt = (img.get("alt") or "").strip()
         element_id = (node.get("id") or img.get("id") or "").strip()
         url = _asset_url(img, base_url)
+        unnumbered = is_unnumbered_asset(url, patterns=unnumbered_patterns)
         label = figure_label(
             element_id=element_id,
             alt=alt,
             caption=caption,
-            numbered=not is_unnumbered_asset(url, patterns=unnumbered_patterns),
+            numbered=not unnumbered,
         )
+        if not label and rank == 0 and unnumbered:
+            # The publisher marked this element as a figure AND serves its asset
+            # from the unnumbered series, so it is a display item whatever its id
+            # spells. ScienceDirect keys these `undfig1`, `undfig2`, ... with no
+            # caption and an empty alt, which no label source can read. Measured
+            # 2026-09-19 on 10.1053/j.ajkd.2019.12.001 (KDOQI vascular access):
+            # the CKD heat map and two checklists, 417-528 px tall, were filed as
+            # `unlabelled` decoration and the capture was refused for dropping
+            # them. Both conditions are required: an unlabelled <figure> with an
+            # ordinary asset is still the boxed-text case and stays out.
+            label = _KIND_WORDS["figure"]
         if not label and rank == 0 and caption and in_abstract(node, container):
             # The visual abstract. Science prints it as `<figure id="Fa">` in the
             # structured abstract with a full caption and no "Fig." anywhere, so
@@ -428,11 +443,18 @@ def build_figure_manifest(
     # alt="Table1"; listing it twice would make the manifest disagree with the
     # article. The declared element wins over the alt fallback, and a captioned
     # candidate wins over a bare one, because both are the stronger evidence.
-    best: dict[str, tuple[int, int, FigureRecord]] = {}
+    #
+    # A label WITHOUT a number identifies a kind, not an item: three unnumbered
+    # figures are all "Figure", and folding them into one kept a single image of
+    # three. For those the asset is the identity, so the same asset rendered
+    # twice still collapses and different assets never do.
+    best: dict[tuple[str, str], tuple[int, int, FigureRecord]] = {}
     for rank, index, figure in candidates:
-        current = best.get(figure.label)
+        bare = figure.label in _BARE_KIND_LABELS
+        key = (figure.label, figure.asset_url if bare else "")
+        current = best.get(key)
         if current is None or (rank, -len(figure.caption)) < (current[0], -len(current[2].caption)):
-            best[figure.label] = (rank, index, figure)
+            best[key] = (rank, index, figure)
     figures = [
         FigureRecord(**{**item[2].as_dict(), "position": position})
         for position, item in enumerate(sorted(best.values(), key=lambda item: item[1]))

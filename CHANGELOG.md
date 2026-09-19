@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Fixed (extension 1.5.1, figure selection)
+
+- **Unnumbered figures with an unreadable id are figures, one each.**
+  ScienceDirect keys its unnumbered display items `undfig1`, `undfig2`, ... with
+  no caption and an empty alt, so no label source could read them and they were
+  filed as `unlabelled` decoration. Measured 2026-09-19 on
+  10.1053/j.ajkd.2019.12.001 (the KDOQI vascular-access guideline): the CKD heat
+  map and two checklists, and a receiving capture that refused the whole article
+  for dropping them. A publisher-marked figure element whose asset the profile
+  places in the unnumbered series (`unnumbered_asset_patterns`, Elsevier `-fx`)
+  is now selected as `Figure`. Both conditions are required: an unlabelled
+  `<figure>` with an ordinary asset is still the boxed-text case and stays out.
+- **One label, one figure -- unless the label names no item.** Three unnumbered
+  figures are all `Figure`, and the de-duplication by label kept one image of
+  three. A bare kind label (`Figure`, `Table`) is now keyed by its asset, so the
+  same asset rendered twice still collapses and different assets never do.
+- **The serializer learns the unnumbered rule.** `figure_manifest` has dropped
+  the invisible number from an `-fx` asset since 2026-09-11; the extension's
+  serializer never did, so the twins disagreed on every Elsevier graphical
+  abstract (`Figure 10` vs `Figure`). Both rules above and that one are now the
+  same on both sides, and one test runs both on the same four pages.
+
 ### Added (extension 1.5.0)
 
 - **A held work folds its metadata away.** When the receiver answers that it

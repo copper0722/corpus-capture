@@ -242,6 +242,26 @@ ELSEVIER_NUMBERED_FIGURE = """
 </figure></div></body></html>
 """
 
+#: Three unnumbered figures and one numbered, in document order, as ScienceDirect
+#: renders a long guideline: `undfigN` ids, `-fx` assets, no caption, empty alt.
+ELSEVIER_UNDFIG_ARTICLE = """
+<html><body><div id="body"><p>Prose.</p>
+<span class="display"><figure class="figure text-xs" id="undfig1"><span>
+  <img src="https://ars.els-cdn.com/content/image/1-s2.0-S0272638619311370-fx1.jpg"
+       height="417" alt=""></span></figure></span>
+<figure class="figure" id="f1"><span>
+  <img src="https://ars.els-cdn.com/content/image/1-s2.0-S0272638619311370-gr1.jpg"
+       alt="" aria-describedby="alt1"></span>
+  <div id="alt1">The ESKD Life-Plan.</div></figure>
+<span class="display"><figure class="figure text-xs" id="undfig2"><span>
+  <img src="https://ars.els-cdn.com/content/image/1-s2.0-S0272638619311370-fx2.jpg"
+       height="528" alt=""></span></figure></span>
+<span class="display"><figure class="figure text-xs" id="undfig3"><span>
+  <img src="https://ars.els-cdn.com/content/image/1-s2.0-S0272638619311370-fx3.jpg"
+       height="466" alt=""></span></figure></span>
+</div></body></html>
+"""
+
 
 class TestUnnumberedDisplayItem:
     """A number nobody can see is worse than no number: a reader cites it.
@@ -270,6 +290,68 @@ class TestUnnumberedDisplayItem:
         """The over-correction control."""
 
         assert [f.label for f in self._figures(ELSEVIER_NUMBERED_FIGURE)] == ["Figure 2"]
+
+    def test_unnumbered_figures_with_an_unreadable_id_are_kept_one_each(self):
+        """ScienceDirect keys them `undfigN`: no number, no caption, empty alt.
+
+        Measured 2026-09-19 on 10.1053/j.ajkd.2019.12.001 (KDOQI vascular
+        access): three such figures -- the CKD heat map and two checklists --
+        were filed as decoration, and the receiving capture was refused for
+        dropping article images. Beside them, a numbered figure keeps its number.
+        """
+
+        figures = self._figures(ELSEVIER_UNDFIG_ARTICLE)
+        assert [f.label for f in figures] == ["Figure", "Figure 1", "Figure", "Figure"]
+        assert [f.figure_id for f in figures] == ["undfig1", "f1", "undfig2", "undfig3"]
+        assert [f.asset_url.rsplit("-", 1)[-1] for f in figures] == [
+            "fx1.jpg", "gr1.jpg", "fx2.jpg", "fx3.jpg"]
+
+    def test_the_same_unnumbered_asset_rendered_twice_is_still_one_figure(self):
+        twice = ELSEVIER_UNDFIG_ARTICLE.replace("-fx2.jpg", "-fx1.jpg")
+        labels = [f.asset_url.rsplit("-", 1)[-1] for f in self._figures(twice)]
+        assert labels == ["fx1.jpg", "gr1.jpg", "fx3.jpg"]
+
+    def test_the_extension_selects_the_same_unnumbered_figures(self):
+        """The serializer is the twin of this module; they may not disagree."""
+
+        import json
+        import shutil
+        import subprocess
+
+        root = Path(__file__).resolve().parents[1]
+        node = shutil.which("node") or shutil.which("nodejs")
+        if node is None or not (root / "node_modules" / "linkedom").is_dir():
+            pytest.skip("node or linkedom is not installed")
+        profile = json.dumps(profile_for_url(ELSEVIER_URL))
+        for markup in (ELSEVIER_UNDFIG_ARTICLE, ELSEVIER_GRAPHICAL_ABSTRACT,
+                       ELSEVIER_NUMBERED_FIGURE,
+                       ELSEVIER_UNDFIG_ARTICLE.replace("-fx3.jpg", "-box3.jpg")):
+            script = f"""
+              import {{ parseHTML }} from "linkedom";
+              import {{ serializePage }} from "{(root / "extension" / "serialize.js").as_posix()}";
+              import {{ LIMITS }} from "{(root / "extension" / "limits.js").as_posix()}";
+              const {{ document }} = parseHTML({json.dumps(markup)});
+              globalThis.document = document;
+              globalThis.location = {{ href: {json.dumps(ELSEVIER_URL)} }};
+              const page = serializePage("0123456789abcdef", {profile}, LIMITS);
+              console.log(JSON.stringify((page.figures || []).map((f) => [f.label, f.figure_id])));
+            """
+            result = subprocess.run([node, "--input-type=module", "--eval", script],
+                                    capture_output=True, text=True, check=False, cwd=root)
+            assert result.returncode == 0, result.stderr
+            seen = [tuple(row) for row in json.loads(result.stdout.strip().splitlines()[-1])]
+            assert seen == [(f.label, f.figure_id) for f in self._figures(markup)]
+
+    def test_an_unlabelled_figure_with_an_ordinary_asset_stays_out(self):
+        """The confusable negative: the boxed-text <figure> is not a display item."""
+
+        boxed = ELSEVIER_UNDFIG_ARTICLE.replace("-fx3.jpg", "-box3.jpg")
+        manifest = build_figure_manifest(
+            boxed, profile=profile_for_url(ELSEVIER_URL), base_url=ELSEVIER_URL)
+        assert [f.asset_url.rsplit("-", 1)[-1] for f in manifest.figures] == [
+            "fx1.jpg", "gr1.jpg", "fx2.jpg"]
+        assert [d["reason"] for d in manifest.decorative
+                if d["asset_url"].endswith("-box3.jpg")] == ["unlabelled"]
 
     def test_the_pattern_is_profile_data_not_a_rule_in_the_code(self):
         assert profile_for_url(ELSEVIER_URL)["unnumbered_asset_patterns"] == ["-fx"]
