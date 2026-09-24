@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed (extension 1.5.2, NEJM video)
+
+- **An NEJM Quick Take or Double Take is a video again.** The player's ajax
+  document is now JSON -- `{"hasAccess":true,"html":"<media-player-app ...
+  mediaID=\"BOV6WXtL\" ...>"}` -- so the attribute's quotes arrive
+  backslash-escaped and the media-id pattern (`mediaID=["']`) never matched:
+  every NEJM video was recorded as `not_a_video`. Measured 2026-09-24 on
+  NEJMdo008691 (Case 27-2026) and the Quick Takes of 10.1056/NEJMoa2607978 and
+  10.1056/NEJMoa2601598. `playerMediaId()` decodes the JSON first, treats a
+  document with no `html` as the text-only Research Summary it is, and matches
+  the attribute case-insensitively (serialized markup lowercases it).
+
 ### Fixed (extension 1.5.1, figure selection)
 
 - **Unnumbered figures with an unreadable id are figures, one each.**

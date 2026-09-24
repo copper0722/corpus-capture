@@ -625,15 +625,41 @@ export function pickJwRendition(media, maxWidth = 1080) {
   return pool[0].file;
 }
 
+/**
+ * The JW media id an NEJM player document names, or "" for a text-only card.
+ *
+ * Measured 2026-09-24 on NEJMdo008691 (NEJM Case 27-2026): the ajax document is
+ * JSON, `{"hasAccess":true,"html":"<media-player-app ... mediaID=\\"BOV6WXtL\\" ...>"}`,
+ * so the attribute's quotes arrive backslash-escaped and `mediaID=["']` never
+ * matched -- every NEJM video failed as not_a_video. The JSON is decoded first;
+ * a document with no `html` (a Research Summary card) is not a video. The
+ * attribute is matched case-insensitively, because serialized markup lowercases it.
+ */
+export function playerMediaId(text) {
+  let body = String(text || "").trim();
+  if (body.startsWith("{")) {
+    try {
+      const payload = JSON.parse(body);
+      if (payload && typeof payload === "object") {
+        if (!payload.html) return "";
+        body = String(payload.html);
+      }
+    } catch (_) {
+      // Not JSON after all: read it as markup.
+    }
+  }
+  const found = /media_id=([A-Za-z0-9]{8})\b|mediaid=\\?["']([A-Za-z0-9]{8})\\?["']|data-media-id=\\?["']([A-Za-z0-9]{8})\\?["']/i.exec(body);
+  return found ? (found[1] || found[2] || found[3]) : "";
+}
+
 async function resolveVideo(tabId, candidate, { pageUrl, profile }) {
   let mediaId = candidate.media_id || "";
   if (candidate.resolver === "nejm_do") {
     // The player document is credentialed and same-origin; the page fetches it.
     const document = await inject(tabId, fetchTextInPage, [candidate.url, 400000, 30000]);
     if (!document || !document.ok) return { ok: false, reason: `player_document_${(document && document.reason) || "unavailable"}` };
-    const found = /media_id=([A-Za-z0-9]{8})\b|mediaID=["']([A-Za-z0-9]{8})["']|data-media-id=["']([A-Za-z0-9]{8})["']/.exec(document.text);
-    if (!found) return { ok: false, reason: "not_a_video" };
-    mediaId = found[1] || found[2] || found[3];
+    mediaId = playerMediaId(document.text);
+    if (!mediaId) return { ok: false, reason: "not_a_video" };
   }
   if (!/^[A-Za-z0-9]{8}$/.test(mediaId)) return { ok: false, reason: "media_id_missing" };
   const template = String(((profile && profile.media_metadata_endpoints) || {}).jwplayer || "");

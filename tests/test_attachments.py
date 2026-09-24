@@ -267,6 +267,29 @@ class TestBytesDecideWhatAFileIs:
 
 
 @needs_node
+def test_the_nejm_player_document_names_its_media_id_in_the_json_shape_it_has_today():
+    """Measured 2026-09-24 on NEJMdo008691: the ajax document is JSON whose html
+    carries mediaID with backslash-escaped quotes. The old pattern never matched it,
+    so every NEJM Quick Take / Double Take failed as not_a_video."""
+
+    out = _run(f"""
+      import {{ playerMediaId }} from "{ATTACHMENTS_JS}";
+      const esc = String.fromCharCode(92);
+      const doc = JSON.stringify({{ hasAccess: true, html:
+        '<media-player-app isModal="true" brand="nejm" mediaID="BOV6WXtL" player="numbered"></media-player-app>' }});
+      console.log(JSON.stringify([
+        doc.includes(esc + '"BOV6WXtL' + esc + '"'),
+        playerMediaId(doc),
+        playerMediaId(JSON.stringify({{ hasAccess: true }})),
+        playerMediaId('<media-player-app mediaid="AbCd1234" player="qt"></media-player-app>'),
+        playerMediaId('<iframe src="https://content.jwplatform.com/players/x.html?media_id=Zz9Yy8Xx">'),
+        playerMediaId('<p>a Research Summary</p>'),
+      ]));
+    """)
+    assert out == [True, "BOV6WXtL", "", "AbCd1234", "Zz9Yy8Xx", ""]
+
+
+@needs_node
 def test_both_sides_spell_the_stored_name_the_same_way():
     """The offline path has no receiver to choose the name; the two must agree."""
 
