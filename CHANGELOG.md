@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed (extension 1.5.3, Science attachments)
+
+- Publisher-marked text-to-speech players are reading aids, not audio
+  attachments. Exclude their player, lazy-source and download links; retain
+  authored interviews even when served by the same media provider.
+- An Atypon `/doi/epdf/` reader shell now resolves its explicit same-origin,
+  same-DOI PDF download link. Preserve the discovered viewer URL and record
+  the final file URL. Network policy, size limits and PDF byte validation
+  still apply; login/error HTML remains a failed attachment.
+
 ### Fixed (extension 1.5.2, NEJM video)
 
 - **An NEJM Quick Take or Double Take is a video again.** The player's ajax

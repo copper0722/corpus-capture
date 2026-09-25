@@ -568,3 +568,86 @@ def test_the_registry_names_the_player_endpoint_and_validates_it():
         with pytest.raises(ProfileRegistryError):
             validate_registry(broken)
 
+
+
+@needs_node
+@needs_dom
+def test_read_aloud_is_not_an_attachment_but_an_interview_still_is():
+    markup = PAGE.replace('</main>', '''
+      <div class="audio-player audio-player--tts">
+        <audio><source src="https://play.example.org/download?mediaId=tts"
+          type="audio/mpeg"></audio>
+        <a href="https://play.example.org/read-aloud.mp3">Listen</a>
+        <span data-audio-src="https://play.example.org/lazy.mp3"></span>
+      </div>
+      <audio src="https://play.example.org/download?mediaId=interview"></audio>
+      </main>''')
+    rows = _discover(markup, {"attachment_link_selectors": [".audio-player a", ".audio-player source"]})['attachments']
+    audio = [row['url'] for row in rows if row['kind'] == 'audio']
+    assert f'{_MEDIA}/nejmp0000001_interview.mp3' in audio
+    assert 'https://play.example.org/download?mediaId=interview' in audio
+    assert not any('tts' in row['url'] or 'read-aloud' in row['url'] or 'lazy' in row['url'] for row in rows)
+
+
+@needs_node
+@needs_dom
+@pytest.mark.parametrize('markup, expected', [
+    ('<a href="/doi/pdf/10.1126/example?download=true">DOWNLOAD</a>',
+     'https://publisher.example/doi/pdf/10.1126/example?download=true'),
+    ('<base href="https://evil.example"><a href="/doi/pdf/10.1126/example">PDF</a>',
+     'https://publisher.example/doi/pdf/10.1126/example'),
+    ('<a href="https://evil.example/doi/pdf/10.1126/example">PDF</a>', None),
+    ('<a href="/doi/pdf/10.1126/another">PDF</a>', None),
+    ('<a href="https://user:pass@publisher.example/doi/pdf/10.1126/example">PDF</a>', None),
+    ('<form>Sign in</form>', None),
+])
+def test_pdf_reader_requires_explicit_same_origin_same_doi_download(markup, expected):
+    out = _run(f'''
+      import {{ DOMParser }} from "linkedom";
+      import {{ pdfDownloadInPage }} from "{ATTACHMENTS_JS}";
+      globalThis.DOMParser = DOMParser;
+      globalThis.location = {{ origin: "https://publisher.example" }};
+      globalThis.__corpusCaptureAttachments = {{ token: new TextEncoder().encode({json.dumps(markup)}) }};
+      console.log(JSON.stringify(pdfDownloadInPage("token", "https://publisher.example/doi/epdf/10.1126/example")));
+    ''')
+    assert out == expected
+
+
+@needs_node
+@needs_dom
+@pytest.mark.parametrize('download_body, expected_status', [('%PDF-1.4\nsynthetic', 'captured'), ('<html>Login</html>', 'failed')])
+def test_collect_resolves_viewer_and_checks_download_bytes(download_body, expected_status):
+    out = _run(f'''
+      import {{ DOMParser }} from "linkedom";
+      import {{ webcrypto }} from "node:crypto";
+      import {{ collectAttachments }} from "{ATTACHMENTS_JS}";
+      globalThis.DOMParser = DOMParser;
+      Object.defineProperty(globalThis, "crypto", {{ value: webcrypto, configurable: true }});
+      globalThis.location = {{ origin: "https://www.nejm.org" }};
+      globalThis.chrome = {{ scripting: {{ executeScript: async (s) => [{{ result: await s.func(...s.args) }}] }} }};
+      const calls = [], stored = [];
+      globalThis.fetch = async (url) => {{
+        calls.push(url);
+        const viewer = url.includes('/epdf/');
+        const response = new Response(viewer
+          ? '<a href="/doi/pdf/10.1126/example?download=true">DOWNLOAD</a>'
+          : {json.dumps(download_body)}, {{ headers: {{ 'content-type': viewer ? 'text/html' : 'application/pdf' }} }});
+        Object.defineProperty(response, 'url', {{ value: url }});
+        return response;
+      }};
+      const rows = await collectAttachments({{
+        tabId: 1, pageUrl: "https://www.nejm.org/story", profile: {{}},
+        discovered: [{{index:1,kind:'pdf',url:'https://www.nejm.org/doi/epdf/10.1126/example',source:'anchor'}}],
+        sink: async (meta, bytes) => {{ stored.push(new TextDecoder().decode(bytes)); return {{payload_name:'source.pdf'}}; }},
+      }});
+      console.log(JSON.stringify({{ rows, calls, stored, retained: Object.keys(globalThis.__corpusCaptureAttachments) }}));
+    ''')
+    assert len(out['calls']) == 2
+    assert out['rows'][0]['status'] == expected_status
+    assert out['retained'] == []
+    if expected_status == 'captured':
+        assert out['stored'] == [download_body]
+        assert out['rows'][0]['final_url'].endswith('/doi/pdf/10.1126/example?download=true')
+    else:
+        assert out['stored'] == []
+        assert out['rows'][0]['reason'] == 'html_instead_of_pdf'

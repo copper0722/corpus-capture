@@ -65,6 +65,7 @@ executed.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.5.3 | 2026-09-25 | Text-to-speech reading aids no longer appear as missing audio attachments. PDF reader links save the actual PDF when available. No permission change. |
 | 1.5.2 | 2026-09-24 | NEJM video: a Quick Take or Double Take whose player document now arrives as JSON is recognized as a video again instead of being recorded as not a video. No permission change. |
 | 1.5.1 | 2026-09-19 | Figure selection: a publisher's unnumbered display items (ScienceDirect `undfig`, `-fx` assets) are kept as figures, one each, and no longer claim a number the page never printed. No permission change. |
 | 1.5.0 | 2026-09-19 | Beside a work the receiver already holds, the bibliographic fields fold away behind the line that says so and the panel shows the reader's note on that work with a box to add to it; saving appends the new text at the receiver. No permission change. |

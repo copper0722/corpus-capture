@@ -157,6 +157,10 @@ export function discoverAttachmentsInPage(profile, limits) {
     if (node && (node.innerText || "").length > 400) { articleRoot = node; break; }
   }
   const inArticle = (node) => Boolean(articleRoot && articleRoot.contains(node));
+  // Publisher text-to-speech is a reading aid, not an authored audio attachment.
+  // Match the explicit player marker, not its host or the word "listen": an
+  // interview can use the same media provider and must still be captured.
+  const isReadAloud = (node) => Boolean(node.closest(".audio-player--tts"));
 
   const SUPPLEMENT_HREF = /\/doi\/suppl\/|\/suppl_file\/|supplement|supplementary|supplemental|\/appendix|MOESM|\/mmc\d|\/media\/[^/]*(?:suppl|appendix)|\.suppl\.|_suppl|-suppl|_appendix|_protocol|-protocol|_sap\b|data[-_]sharing|disclosure/i;
   const SUPPLEMENT_LABEL = /supplement|appendix|protocol|disclosure|data sharing|statistical analysis plan|\be-?(?:table|figure|appendix|method|component)s?\b|補充|附錄|附件/i;
@@ -202,7 +206,10 @@ export function discoverAttachmentsInPage(profile, limits) {
     const href = anchor.getAttribute("href") || "";
     if (!href || /^(javascript|mailto|tel):/i.test(href)) continue;
     const label = textOf(anchor) || anchor.getAttribute("title") || anchor.getAttribute("aria-label") || "";
-    if (AUDIO_SUFFIX.test(href)) { add("audio", href, label || "Audio", "anchor"); continue; }
+    if (AUDIO_SUFFIX.test(href)) {
+      if (!isReadAloud(anchor)) add("audio", href, label || "Audio", "anchor");
+      continue;
+    }
     if (HLS_SUFFIX.test(href)) { add("video", href, label || "Video", "anchor", { resolver: "hls" }); continue; }
     if (VIDEO_SUFFIX.test(href)) { add("video", href, label || "Video", "anchor"); continue; }
     if (isSupplementLink(href, label)) {
@@ -225,6 +232,7 @@ export function discoverAttachmentsInPage(profile, limits) {
   //    attribute. NEJM's downloadable interview is a `/cms/asset/.../*.mp3`
   //    anchor, already claimed above, which is why the anchor pass runs first.
   for (const node of qsa("audio[src], audio source[src], [data-audio-src], [data-src]")) {
+    if (isReadAloud(node)) continue;
     const src = node.getAttribute("src") || node.getAttribute("data-audio-src") || node.getAttribute("data-src") || "";
     if (!src) continue;
     if (AUDIO_SUFFIX.test(src) || node.tagName === "AUDIO" || (node.parentElement && node.parentElement.tagName === "AUDIO")) {
@@ -304,6 +312,7 @@ export function discoverAttachmentsInPage(profile, limits) {
       if (!href) continue;
       const label = textOf(anchor) || anchor.getAttribute("title") || "";
       const kind = guessKind(href, label);
+      if (isReadAloud(anchor)) continue;
       add(kind, href, label, `profile:${selector.slice(0, 80)}`, HLS_SUFFIX.test(href) ? { resolver: "hls" } : undefined);
     }
   }
@@ -393,6 +402,30 @@ export async function fetchAttachmentInPage(url, token, options) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Resolve an Atypon PDF viewer's explicit download link. Runs in the page.
+ * Only the same origin and exact viewer DOI can supply the PDF. Never execute
+ * viewer markup or follow its scripts, base element, or unrelated links.
+ */
+export function pdfDownloadInPage(token, viewerUrl) {
+  const bytes = (globalThis.__corpusCaptureAttachments || {})[token];
+  if (!bytes || bytes.length > 2 * 1024 * 1024) return null;
+  let viewer;
+  try { viewer = new URL(viewerUrl); } catch (_) { return null; }
+  if (viewer.origin !== location.origin) return null;
+  const match = /^\/doi\/epdf\/(10\.[^/]+\/.+)$/i.exec(viewer.pathname);
+  if (!match) return null;
+  const expectedPath = `/doi/pdf/${match[1]}`;
+  const doc = new DOMParser().parseFromString(new TextDecoder().decode(bytes), "text/html");
+  for (const anchor of doc.querySelectorAll("a[href]")) {
+    try {
+      const target = new URL(anchor.getAttribute("href"), viewer.href);
+      if (target.origin === viewer.origin && target.pathname === expectedPath
+          && !target.username && !target.password) return target.href;
+    } catch (_) { /* Ignore malformed page-controlled links. */ }
+  }
+  return null;
 }
 
 /** One base64 slice of a parked attachment. Runs inside the page. */
@@ -768,6 +801,24 @@ export async function collectAttachments({
       if (!fetched || !fetched.ok) {
         rows.push({ ...row, status: "failed", reason: (fetched && fetched.reason) || "fetch_failed", ...(fetched && fetched.bytes ? { bytes: fetched.bytes } : {}) });
         continue;
+      }
+      // /doi/epdf is a reader shell on some publishers. Resolve only its
+      // explicit same-DOI download link, then apply the usual policy and byte
+      // checks again. A login/error HTML page remains a failed PDF.
+      if (row.kind === "pdf" && fetched.type === "text/html" && !fetched.data) {
+        const download = await inject(tabId, pdfDownloadInPage, [token, fetched.final_url || row.url]);
+        if (download) {
+          const decision = attachmentDecision(download, { pageUrl, profile });
+          if (decision.allowed && decision.where === "page") {
+            fetched = await inject(tabId, fetchAttachmentInPage, [decision.url, token, {
+              cap: LIMITS.maxAttachmentBytes, timeoutMs: LIMITS.attachmentTimeoutMs, allowedOrigins,
+            }]);
+            if (!fetched || !fetched.ok) {
+              rows.push({ ...row, status: "failed", reason: fetched?.reason || "fetch_failed" });
+              continue;
+            }
+          }
+        }
       }
       const verdict = classifyAttachmentBytes(row.kind, fetched.type, fetched.head);
       if (!verdict.ok) {
