@@ -186,6 +186,7 @@ export function bundleCard(declared, identity = null) {
   }
   const { container, when } = sourceParts(merged);
   return {
+    metadata: merged,
     title: merged.title,
     authors: merged.authors,
     source: sourceLine(merged),

@@ -80,7 +80,7 @@ STATUSES = ("supported", "generic", "unsupported")
 #: Every key a profile may carry. Unknown keys fail closed: a typo in a selector
 #: name is otherwise a profile that silently does nothing.
 PROFILE_KEYS = {
-    "id", "display_name", "host_patterns", "article_container_selectors",
+    "id", "display_name", "host_patterns", "article_container_selectors", "article_header_selectors",
     "figure_selectors", "caption_selectors", "meta_sources", "doi_source",
     "series_source", "access_markers", "status", "fixture", "notes", "reason",
     "drop_selectors", "drop_asset_hosts", "drop_asset_patterns",
@@ -94,7 +94,7 @@ REQUIRED_KEYS = {
 #: Inherited from the generic profile when a publisher profile omits them, so a
 #: profile only has to state what it does DIFFERENTLY.
 INHERITED_KEYS = (
-    "article_container_selectors", "figure_selectors", "caption_selectors",
+    "article_container_selectors", "article_header_selectors", "figure_selectors", "caption_selectors",
     "meta_sources", "doi_source", "series_source", "access_markers",
     "drop_selectors", "decorative_asset_patterns", "unnumbered_asset_patterns",
     "asset_origins", "attachment_link_selectors", "attachment_origins",
@@ -169,7 +169,7 @@ def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
         if profile["status"] not in STATUSES:
             raise ProfileRegistryError(f"{where}.status is not one of {STATUSES}")
         for key in (
-            "host_patterns", "article_container_selectors", "figure_selectors",
+            "host_patterns", "article_container_selectors", "article_header_selectors", "figure_selectors",
             "caption_selectors", "meta_sources", "doi_source", "series_source",
             "access_markers", "drop_selectors", "drop_asset_hosts",
             "drop_asset_patterns", "decorative_asset_patterns",

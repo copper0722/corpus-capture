@@ -416,3 +416,15 @@ name a receiver would have chosen, because here there is no receiver to choose
 it. A receiver that watches that directory admits the `.html` only when the
 sidecar is beside it, and an attachment only when that sidecar lists it with
 its hash: a name is not evidence.
+
+
+### Optional held-work desktop actions (extension 1.6.0)
+
+A receiver may offer authenticated `GET /api/v1/capture/files?doi=...`, returning
+`{files: [{file_ref, role, kind, bytes, label}]}`, and
+`POST /api/v1/capture/desktop?doi=...&file_ref=...`, returning
+`{ok, name, bytes, sha256, desktop_path}` after verified delivery. The receiver
+resolves both DOI and opaque file reference and owns the desktop destination.
+The client never supplies a filesystem path or another origin. Unsupported
+receivers show an explicit error; the client does not silently recapture a
+Reader page or pretend a browser download reached the desktop.

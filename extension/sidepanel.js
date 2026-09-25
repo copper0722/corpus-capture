@@ -22,6 +22,8 @@ import {
   SETTLED_STATES as SETTLED,
   appendNote,
   finalizeCapture,
+  heldFiles,
+  deliverHeldFile,
   listReceipts,
   lookupIdentity,
   mergeReceipt,
@@ -350,21 +352,82 @@ function chip(text, className = "chip") {
   return node;
 }
 
+let downloadDoi = "";
+let downloadBusy = false;
+async function renderBundleFiles(doi) {
+  if (downloadDoi === doi) return;
+  downloadDoi = doi;
+  const select = $("#bundle-files");
+  const button = $("#bundle-download");
+  const status = $("#bundle-download-status");
+  select.replaceChildren();
+  select.disabled = button.disabled = true;
+  status.textContent = doi ? "讀取檔案…" : "";
+  if (!doi) return;
+  try {
+    const files = await heldFiles(doi);
+    if (downloadDoi !== doi) return;
+    for (const file of files) {
+      const option = document.createElement("option");
+      option.value = file.file_ref;
+      option.textContent = `${file.label} · ${file.kind.toUpperCase()} · ${(file.bytes / 1048576).toFixed(1)} MB`;
+      option.selected = file.role === "source_html";
+      select.append(option);
+    }
+    select.disabled = !files.length;
+    button.disabled = !files.length || downloadBusy;
+    status.textContent = files.length ? "" : "尚無可下載檔案";
+  } catch (error) {
+    if (downloadDoi === doi) status.textContent = `讀取失敗：${error.message}`;
+  }
+}
+
+$("#bundle-download").addEventListener("click", async () => {
+  const doi = downloadDoi;
+  const fileRef = $("#bundle-files").value;
+  if (!doi || !fileRef || downloadBusy) return;
+  downloadBusy = true;
+  $("#bundle-download").disabled = true;
+  $("#bundle-download-status").textContent = "正在存到桌面…";
+  try {
+    const receipt = await deliverHeldFile(doi, fileRef);
+    if (downloadDoi === doi) $("#bundle-download-status").textContent = `已存到桌面：${receipt.name}`;
+  } catch (error) {
+    if (downloadDoi === doi) $("#bundle-download-status").textContent = `下載失敗：${error.message}`;
+  } finally {
+    downloadBusy = false;
+    $("#bundle-download").disabled = !$("#bundle-files").value;
+  }
+});
+
 function renderBundle(card) {
   clearTimeout(staleTimer);
   const box = $("#bundle");
   box.classList.remove("stale");
   if (!card) {
     box.hidden = true;
+    renderBundleFiles("");
     pageNote("未顯示 bundle");
     return;
   }
   pageNote("");
   $("#bundle-title").textContent = card.title || card.doi;
   renderAuthors(card.authors);
+  if (!card.authors.length) $("#bundle-authors").textContent = "作者：未提供";
+  const fields = [];
+  for (const field of METADATA_FIELDS.filter((name) => !["title", "authors"].includes(name))) {
+    const label = document.createElement("dt");
+    label.textContent = FIELD_LABELS[field];
+    const value = document.createElement("dd");
+    value.textContent = card.metadata[field] || "未提供";
+    fields.push(label, value);
+  }
+  $("#bundle-metadata").replaceChildren(...fields);
+  renderBundleFiles(card.doi);
   // The date and the volume, issue and pages read as one token; only the
   // journal's name may wrap.
   const where = $("#bundle-source");
+  where.hidden = true;
   where.replaceChildren();
   if (card.container) where.append(card.container);
   if (card.container && card.when) where.append(" · ");

@@ -104,7 +104,7 @@ export function profileForUrl(registry, url) {
   for (const profile of (registry && registry.profiles) || []) {
     if ((profile.host_patterns || []).some((pattern) => hostMatches(host, pattern))) {
       const merged = { ...generic, ...profile, matched: true };
-      for (const key of ["article_container_selectors", "figure_selectors",
+      for (const key of ["article_container_selectors", "article_header_selectors", "figure_selectors",
                          "caption_selectors", "access_markers", "drop_selectors",
                          "decorative_asset_patterns", "unnumbered_asset_patterns",
                          "asset_origins", "attachment_link_selectors",
@@ -539,6 +539,26 @@ export async function lookupIdentity(doi) {
     error.status = response.status;
     throw error;
   }
+  return payload;
+}
+
+/** Held artifacts and verified desktop delivery, using the configured receiver. */
+export async function heldFiles(doi) {
+  const config = await settings();
+  const response = await apiFetch(`/api/v1/capture/files?doi=${encodeURIComponent(doi)}`, config);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(describeRefusal(payload, response.status));
+  return payload.files || [];
+}
+
+export async function deliverHeldFile(doi, fileRef) {
+  const config = await settings();
+  const response = await apiFetch(
+    `/api/v1/capture/desktop?doi=${encodeURIComponent(doi)}&file_ref=${encodeURIComponent(fileRef)}`,
+    { ...config, method: "POST" }
+  );
+  const payload = await response.json();
+  if (!response.ok) throw new Error(describeRefusal(payload, response.status));
   return payload;
 }
 

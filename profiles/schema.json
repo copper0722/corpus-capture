@@ -147,6 +147,9 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9.-]+/[^\\s:]*\\{media_id\\}[^\\s:]*$"
           }
+        },
+        "article_header_selectors": {
+          "$ref": "#/$defs/selectorList"
         }
       }
     },
@@ -256,6 +259,9 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9.-]+/[^\\s:]*\\{media_id\\}[^\\s:]*$"
           }
+        },
+        "article_header_selectors": {
+          "$ref": "#/$defs/selectorList"
         }
       },
       "allOf": [

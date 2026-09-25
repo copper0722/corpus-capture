@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added and fixed (extension 1.6.0, complete capture and held-work card)
+
+- Preserve a featured article's configured hero block and capture a
+  publisher-injected SVG through its declared image URL. Inline SVG remains
+  blocked; image requests still pass the asset policy.
+- Reader mode displays all available bibliographic fields and explicitly marks
+  missing values. Reviewed metadata supplied by the receiver is retained.
+- Reader mode lists held files and offers verified desktop delivery through
+  the configured receiver, preserving HTML/PDF bytes instead of converting them.
+
 ### Fixed (extension 1.5.3, Science attachments)
 
 - Publisher-marked text-to-speech players are reading aids, not audio

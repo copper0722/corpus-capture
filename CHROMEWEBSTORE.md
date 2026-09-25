@@ -51,6 +51,8 @@ executed.
   reader keeps on it there and sends what the reader types into the note box to
   that same receiver, on save. A draft not yet saved lives only in the open
   panel's memory.
+- On the receiver's own reading page, a reader can request a held file be saved
+  to the desktop configured by that receiver; the receiver verifies its hash.
 - On the receiver's own reading page, the panel reads the bibliographic
   `<meta>` that page declares and sends the declared DOI to that receiver's
   lookup; nothing from it is stored or sent anywhere else.
@@ -65,6 +67,7 @@ executed.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.6.0 | 2026-09-25 | Featured article headers and publisher SVG diagrams are kept. Reader mode shows complete metadata and can save held files to the desktop through the configured receiver. No permission change. |
 | 1.5.3 | 2026-09-25 | Text-to-speech reading aids no longer appear as missing audio attachments. PDF reader links save the actual PDF when available. No permission change. |
 | 1.5.2 | 2026-09-24 | NEJM video: a Quick Take or Double Take whose player document now arrives as JSON is recognized as a video again instead of being recorded as not a video. No permission change. |
 | 1.5.1 | 2026-09-19 | Figure selection: a publisher's unnumbered display items (ScienceDirect `undfig`, `-fx` assets) are kept as figures, one each, and no longer claim a number the page never printed. No permission change. |

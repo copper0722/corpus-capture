@@ -167,7 +167,8 @@ class TestStructuralFigureSelection:
         source = _read("serialize.js")
         assert "article_container_selectors" in source
         assert "articleRoot" in source
-        assert "bodyClone.appendChild(articleRoot.cloneNode(true))" in source
+        assert "roots.push(articleRoot)" in source
+        assert "bodyClone.appendChild(copy)" in source
 
     def test_the_label_pattern_matches_a_number_with_no_space(self):
         """`Figure1`. `\\b` does not match between `e` and `1`."""

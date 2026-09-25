@@ -119,7 +119,38 @@ export function serializePage(nonce, profile, limits) {
   const headClone = document.head
     ? document.head.cloneNode(true) : document.createElement("head");
   const bodyClone = document.createElement("body");
-  bodyClone.appendChild(articleRoot.cloneNode(true));
+  const roots = [];
+  // A publisher can put its headline and lead image beside the article body.
+  // Select only declared header blocks, never the containing page/marketing rail.
+  for (const selector of sel("article_header_selectors", [".news-article__hero"])) {
+    let header = null;
+    try { header = document.querySelector(selector); } catch (_) { /* invalid selector */ }
+    if (header && !header.contains(articleRoot) && !articleRoot.contains(header)
+        && header.querySelector("h1") && !roots.some((root) => root.contains(header))) roots.push(header);
+  }
+  roots.push(articleRoot);
+  const imageSelector = "img, svg[data-inject-url]";
+  const live = roots.flatMap((root) => [...root.querySelectorAll(imageSelector)]);
+  const liveByCopy = new Map();
+  for (const root of roots) {
+    const copy = root.cloneNode(true);
+    const originals = [...root.querySelectorAll(imageSelector)];
+    [...copy.querySelectorAll(imageSelector)].forEach((node, index) => liveByCopy.set(node, originals[index]));
+    bodyClone.appendChild(copy);
+  }
+  // A publisher-injected SVG has an explicit image source. Preserve that
+  // image in an <img>, where scripts cannot run; raw inline SVG remains
+  // forbidden by the sanitizer. The ordinary asset policy still gates fetches.
+  for (const svg of bodyClone.querySelectorAll("svg[data-inject-url]")) {
+    const original = liveByCopy.get(svg);
+    const img = document.createElement("img");
+    img.setAttribute("src", svg.getAttribute("data-inject-url"));
+    img.setAttribute("class", svg.getAttribute("class") || "");
+    img.setAttribute("alt", "Figure — " + (svg.closest("figure")?.querySelector("h3")?.textContent || "Diagram"));
+    img.setAttribute("data-capture-svg", "publisher-image");
+    liveByCopy.set(img, original);
+    svg.replaceWith(img);
+  }
   clone.appendChild(headClone);
   clone.appendChild(bodyClone);
 
@@ -146,7 +177,6 @@ export function serializePage(nonce, profile, limits) {
   // lazy-loaded figure's `src` attribute is a 1x1 placeholder until it renders,
   // and `currentSrc` is the only property that names the bytes the reader
   // actually saw -- including the srcset variant the viewport picked.
-  const live = [...articleRoot.querySelectorAll("img")];
   const copies = [...bodyClone.querySelectorAll("img")];
 
   // The figure manifest is built HERE, before any src is rewritten: once an
@@ -172,12 +202,13 @@ export function serializePage(nonce, profile, limits) {
     const mark = parent && parent.closest('[role="doc-abstract"], [id*="abstract" i], [class*="abstract" i]');
     return Boolean(mark) && mark !== articleRoot && articleRoot.contains(mark);
   };
+  const imageUrl = (img) => img?.getAttribute("data-inject-url") || img?.currentSrc || img?.src || "";
   const claimFigure = (node, img, selector, rank) => {
     if (claimed.has(img) || figureRows.length >= cap.maxFigures) return;
     const caption = captionOf(node);
     const alt = (img.getAttribute("alt") || "").trim().slice(0, cap.maxAltChars);
     const elementId = (node.id || img.id || "").trim();
-    const unnumbered = isUnnumbered(img.currentSrc || img.src || "");
+    const unnumbered = isUnnumbered(imageUrl(img));
     let label = labelFor(elementId, alt, caption, !unnumbered);
     // A publisher-marked figure served from the unnumbered series is a display
     // item whatever its id spells: ScienceDirect keys them `undfig1`, with no
@@ -187,12 +218,13 @@ export function serializePage(nonce, profile, limits) {
     // The visual abstract: a figure element the page captions inside its
     // abstract, with no "Fig." anywhere (Science's `<figure id="Fa">`).
     if (!label && rank === 0 && caption && inAbstract(node)) label = "Graphical abstract";
+    if (!label && rank === 0 && caption && img.tagName.toLowerCase() === "svg") label = "Figure";
     if (!label) return;
     claimed.add(img);
     figureRows.push({
       figure_id: elementId || "fig" + (figureRows.length + 1),
       label, caption, alt, selector, rank,
-      asset_url: img.currentSrc || img.src || "",
+      asset_url: imageUrl(img),
       order: live.indexOf(img),
     });
   };
@@ -200,7 +232,7 @@ export function serializePage(nonce, profile, limits) {
     let nodes = [];
     try { nodes = [...articleRoot.querySelectorAll(selector)]; } catch (_) { nodes = []; }
     for (const node of nodes) {
-      const img = node.querySelector("img");
+      const img = node.querySelector(imageSelector);
       if (img) claimFigure(node, img, selector, 0);
     }
   }
@@ -232,8 +264,8 @@ export function serializePage(nonce, profile, limits) {
     }));
   const figureAssets = new Set(figureManifest.map((row) => row.asset_url).filter(Boolean));
   copies.forEach((copy, position) => {
-    const source = live[position];
-    const href = (source && (source.currentSrc || source.src)) || copy.getAttribute("src") || "";
+    const source = liveByCopy.get(copy);
+    const href = imageUrl(source) || copy.getAttribute("src") || "";
     copy.removeAttribute("srcset");
     copy.removeAttribute("sizes");
     copy.removeAttribute("loading");

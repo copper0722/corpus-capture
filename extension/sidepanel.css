@@ -114,3 +114,11 @@ input[type="checkbox"] { inline-size: 20px; block-size: 20px; }
 body[data-mode="reader"] #run, body[data-mode="reader"] #receipts { display: none; }
 /* The settings page shares this sheet. */
 h1 { font-size: 1.05rem; margin: 0; }
+
+/* Reader metadata stays explicit, including fields the source did not supply. */
+#bundle-metadata { display: grid; grid-template-columns: 4em minmax(0, 1fr); gap: 5px 10px; margin: 12px 0; font-size: .85rem; }
+#bundle-metadata dt { color: var(--muted); }
+#bundle-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.bundle-downloads { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+#bundle-files { font: inherit; width: 100%; min-width: 0; padding: 6px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; }
+#bundle-download-status { margin: 0; font-size: .8rem; overflow-wrap: anywhere; }

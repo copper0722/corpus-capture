@@ -97,7 +97,10 @@
     ],
     "media_metadata_endpoints": {
       "jwplayer": "cdn.jwplayer.com/v2/media/{media_id}"
-    }
+    },
+    "article_header_selectors": [
+      ".news-article__hero"
+    ]
   },
   "profiles": [
     {

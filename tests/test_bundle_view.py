@@ -84,6 +84,9 @@ def test_the_reading_page_is_the_receivers_own_origin():
 @needs_node
 def test_the_card_is_what_the_page_declares_when_the_receiver_has_nothing():
     card = _run(f"console.log(JSON.stringify(view.bundleCard({json.dumps(DECLARED)}, null)));")
+    metadata = card.pop("metadata")
+    assert metadata["published"] == "2026-09-15"
+    assert metadata["volume"] == "" and metadata["issn"] == ""
     assert card == {
         "title": "UCI Sports Nutrition Project: Position Statement on Nutrition for Cycling",
         "authors": [],
