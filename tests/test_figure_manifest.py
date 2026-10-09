@@ -604,3 +604,351 @@ def test_jama_inline_graphic_extension_receiver_parity():
         result = subprocess.run([node, '--input-type=module', '--eval', script],
                                 capture_output=True, text=True, check=True, cwd=root)
         assert [tuple(row) for row in json.loads(result.stdout)] == expected
+
+
+JAMA_TWO_URL = 'https://jamanetwork.com/journals/jama/fullarticle/9999999'
+SYNTHETIC_FILLER = 'Synthetic filler sentence for scoping. ' * 20
+
+
+def _synthetic_png_bytes(r: int, g: int, b: int) -> bytes:
+    """Deterministic 1x1 RGB PNG, generated in-test so the commit stays text."""
+
+    import struct
+    import zlib
+
+    sig = bytes.fromhex('89504e470d0a1a0a')
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        body = struct.pack('>I', len(data)) + typ + data
+        return body + struct.pack('>I', zlib.crc32(typ + data) & 0xFFFFFFFF)
+
+    ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+    idat = zlib.compress(bytes([0, r, g, b]))
+    return sig + chunk(b'IHDR', ihdr) + chunk(b'IDAT', idat) + chunk(b'IEND', b'')
+
+
+def _synthetic_png(name: str) -> bytes:
+    mapping = {'graphic-a.png': (255, 0, 0), 'graphic-b.png': (0, 0, 255)}
+    return _synthetic_png_bytes(*mapping[name])
+
+
+def _synthetic_b64(name: str) -> str:
+    import base64
+
+    return base64.b64encode(_synthetic_png(name)).decode()
+
+
+def _jama_two_markup(red_name='graphic-a.png', blue_name='graphic-b.png', *, extra_outside='',
+                      second_patch=None, container_class='article-body') -> str:
+    red = _synthetic_b64(red_name)
+    blue = _synthetic_b64(blue_name)
+    if second_patch == 'missing-xml':
+        second_img_attrs = 'class="content-img"'
+        second_link_open = '<a path-from-xml="articlegraphic-b" href="#">'
+    elif second_patch == 'mismatched-link':
+        second_img_attrs = 'class="content-img" path-from-xml="articlegraphic-b"'
+        second_link_open = '<a path-from-xml="unrelated-key" href="#">'
+    else:
+        second_img_attrs = 'class="content-img" path-from-xml="articlegraphic-b"'
+        second_link_open = '<a path-from-xml="articlegraphic-b" href="#">'
+    second_anchor = '<a class="figure-anchor" id="articlegraphic-b"></a>'
+    if second_patch == 'mismatched-anchor':
+        second_anchor = '<a class="figure-anchor" id="unrelated"></a>'
+    first_link_open = '<a path-from-xml="articlegraphic-a" href="#">'
+    first_img_attrs = 'class="content-img" path-from-xml="articlegraphic-a"'
+    return (
+        f'<html><body><div class="{container_class}"><p>{SYNTHETIC_FILLER}</p>'
+        '<div class="figure-table-wrapper inline"><div class="inline-graphic">'
+        '<a class="figure-anchor" id="articlegraphic-a"></a>'
+        f'{first_link_open}<img {first_img_attrs} '
+        f'alt="Image description not available." src="data:image/png;base64,{red}"></a>'
+        '</div></div>'
+        '<div class="figure-table-wrapper inline"><div class="inline-graphic">'
+        f'{second_anchor}'
+        f'{second_link_open}<img {second_img_attrs} '
+        f'alt="Image description not available." src="data:image/png;base64,{blue}"></a>'
+        '</div></div>'
+        f'</div>{extra_outside}</body></html>'
+    )
+
+
+class TestJamaTwoEmbeddedGraphics:
+    """Two unnumbered JAMA graphics with distinct anchors and distinct bytes.
+
+    The receiver intentionally reports asset_url="" once a captured data: URI
+    loses its original URL. Dedup keyed only on (label, asset_url) collapsed
+    two such graphics into one; the serializer (which still sees distinct
+    data: URIs) kept two. Both must keep two, and the same bytes twice must
+    still collapse per the documented same-asset contract. No numbers are
+    invented and no size test is used anywhere.
+    """
+
+    def test_generated_pngs_are_valid_and_distinct(self):
+        import hashlib
+
+        assert len(SYNTHETIC_FILLER) > 400
+        for name in ('graphic-a.png', 'graphic-b.png'):
+            raw = _synthetic_png(name)
+            assert raw[:8] == bytes.fromhex('89504e470d0a1a0a')
+            assert len(raw) < 5000
+        digests = {
+            hashlib.sha256(_synthetic_png(n)).hexdigest()
+            for n in ('graphic-a.png', 'graphic-b.png')
+        }
+        assert len(digests) == 2
+
+    def test_two_distinct_embedded_graphics_survive(self):
+        markup = _jama_two_markup()
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert [(f.label, f.figure_id) for f in result.figures] == [
+            ('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]
+        # No number is invented for unnumbered graphics.
+        assert all(f.label == 'Figure' for f in result.figures)
+        # The captured data: URI lost its URL by design; the bytes are identity.
+        assert [f.asset_url for f in result.figures] == ['', '']
+        assert [f.embedded for f in result.figures] == [True, True]
+        assert result.figures[0].asset_sha256 != result.figures[1].asset_sha256
+        assert all(len(f.asset_sha256) == 64 for f in result.figures)
+
+    def test_same_embedded_bytes_still_collapse(self):
+        """The documented dedup contract: the same asset twice is one figure."""
+
+        markup = _jama_two_markup(red_name='graphic-a.png', blue_name='graphic-a.png')
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert [(f.label, f.figure_id) for f in result.figures] == [
+            ('Figure', 'articlegraphic-a')]
+
+    def test_outside_duplicate_anchor_does_not_steal_identity(self):
+        outside = (
+            '<div class="figure-table-wrapper inline"><div class="inline-graphic">'
+            '<a class="figure-anchor" id="articlegraphic-a"></a>'
+            '<a path-from-xml="articlegraphic-a" href="#">'
+            '<img class="content-img" path-from-xml="articlegraphic-a" '
+            'alt="Image description not available." '
+            f'src="data:image/png;base64,{_synthetic_b64("graphic-a.png")}">'
+            '</a></div></div>'
+        )
+        markup = _jama_two_markup(extra_outside=outside)
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert [(f.label, f.figure_id) for f in result.figures] == [
+            ('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]
+
+    def test_missing_xml_link_on_second_keeps_only_first(self):
+        markup = _jama_two_markup(second_patch='missing-xml')
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert [(f.label, f.figure_id) for f in result.figures] == [
+            ('Figure', 'articlegraphic-a')]
+
+    def test_mismatched_anchor_on_second_keeps_only_first(self):
+        markup = _jama_two_markup(second_patch='mismatched-anchor')
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert [(f.label, f.figure_id) for f in result.figures] == [
+            ('Figure', 'articlegraphic-a')]
+
+    def test_mismatched_link_on_second_keeps_only_first(self):
+        markup = _jama_two_markup(second_patch='mismatched-link')
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert [(f.label, f.figure_id) for f in result.figures] == [
+            ('Figure', 'articlegraphic-a')]
+
+    def test_unknown_scope_keeps_nothing(self):
+        markup = _jama_two_markup(container_class='unknown-scope')
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert result.figures == ()
+
+    def test_foreign_publisher_with_similar_css_keeps_nothing(self):
+        markup = _jama_two_markup()
+        profile = {**profile_for_url(JAMA_TWO_URL), 'id': 'different-publisher'}
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert result.figures == ()
+
+    def test_ordinary_unlabelled_decoration_stays_out(self):
+        markup = (
+            f'<html><body><div class="article-body"><p>{SYNTHETIC_FILLER}</p>'
+            f'<img src="data:image/png;base64,{_synthetic_b64("graphic-a.png")}" '
+            'alt="Image description not available."></div></body></html>'
+        )
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert result.figures == ()
+        assert any(d['reason'] == 'unlabelled' for d in result.decorative)
+
+    def test_extension_and_receiver_agree_on_two_graphic_cases(self):
+        import json
+        import shutil
+        import subprocess
+
+        root = Path(__file__).resolve().parents[1]
+        node = shutil.which('node') or shutil.which('nodejs')
+        assert node and (root / 'node_modules/linkedom').is_dir(), \
+            'actual serializer test prerequisites required'
+        cases = [
+            (_jama_two_markup(), 'jama',
+             [('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]),
+            (_jama_two_markup(red_name='graphic-a.png', blue_name='graphic-a.png'),
+             'jama', [('Figure', 'articlegraphic-a')]),
+            (_jama_two_markup(second_patch='missing-xml'), 'jama',
+             [('Figure', 'articlegraphic-a')]),
+            (_jama_two_markup(second_patch='mismatched-anchor'), 'jama',
+             [('Figure', 'articlegraphic-a')]),
+            (_jama_two_markup(second_patch='mismatched-link'), 'jama',
+             [('Figure', 'articlegraphic-a')]),
+            (_jama_two_markup(container_class='unknown-scope'), 'jama', []),
+            (_jama_two_markup(), 'different-publisher', []),
+        ]
+        for markup, profile_id, expected in cases:
+            profile = {**profile_for_url(JAMA_TWO_URL), 'id': profile_id}
+            script = f'''
+              import {{ parseHTML }} from 'linkedom';
+              import {{ serializePage }} from '{(root / 'extension/serialize.js').as_posix()}';
+              import {{ LIMITS }} from '{(root / 'extension/limits.js').as_posix()}';
+              const {{ document }} = parseHTML({json.dumps(markup)});
+              globalThis.document = document;
+              globalThis.location = {{ href: {json.dumps(JAMA_TWO_URL)} }};
+              const page = serializePage('0123456789abcdef', {json.dumps(profile)}, LIMITS);
+              console.log(JSON.stringify((page.figures || []).map(f => [f.label, f.figure_id])));
+            '''
+            proc = subprocess.run([node, '--input-type=module', '--eval', script],
+                                  capture_output=True, text=True, check=True, cwd=root)
+            seen = [tuple(row) for row in json.loads(proc.stdout.strip().splitlines()[-1])]
+            assert seen == expected
+            receiver = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+            assert [(f.label, f.figure_id) for f in receiver.figures] == expected
+
+
+def _jama_two_srcs_markup(src1: str, src2: str) -> str:
+    """Two declared JAMA graphics with explicit full src strings."""
+
+    return (
+        f'<html><body><div class="article-body"><p>{SYNTHETIC_FILLER}</p>'
+        '<div class="figure-table-wrapper inline"><div class="inline-graphic">'
+        '<a class="figure-anchor" id="articlegraphic-a"></a>'
+        '<a path-from-xml="articlegraphic-a" href="#">'
+        '<img class="content-img" path-from-xml="articlegraphic-a" '
+        f'alt="Image description not available." src="{src1}"></a>'
+        '</div></div>'
+        '<div class="figure-table-wrapper inline"><div class="inline-graphic">'
+        '<a class="figure-anchor" id="articlegraphic-b"></a>'
+        '<a path-from-xml="articlegraphic-b" href="#">'
+        '<img class="content-img" path-from-xml="articlegraphic-b" '
+        f'alt="Image description not available." src="{src2}"></a>'
+        '</div></div>'
+        '</div></body></html>'
+    )
+
+
+class TestJamaReviewFixes:
+    """Parent acceptance remediation: no URI hash as image bytes (R1) and
+    equivalent data-URI headers share one identity on both sides (R2)."""
+
+    def test_invalid_base64_stays_unmeasured_and_preserves_identity(self):
+        """`data:image/png;base64,A` must not store a URI hash as bytes."""
+
+        src = 'data:image/png;base64,A'
+        markup = _jama_two_srcs_markup(src, src)
+        profile = profile_for_url(JAMA_TWO_URL)
+        result = build_figure_manifest(markup, profile=profile, base_url=JAMA_TWO_URL)
+        assert [(f.label, f.figure_id) for f in result.figures] == [
+            ('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]
+        assert [f.asset_url for f in result.figures] == ['', '']
+        assert [f.asset_sha256 for f in result.figures] == ['', '']
+        assert '237933886de30535eba8a37ad1db05f138ae5b3b4ddbee94dbd25a0b07f8c251' not in [
+            f.asset_sha256 for f in result.figures]
+
+    @staticmethod
+    def _invalid_srcs():
+        return [
+            'data:image/png;base64,A',
+            'data:image/png;base64,!!!',
+            'data:image/png;base64,AAAAA',
+            'data:image/png;base64,',
+            'data:image/png;base64',
+            'data:image/png;base64,   ',
+        ]
+
+    def test_each_malformed_payload_preserves_declared_identity(self):
+        for src in self._invalid_srcs():
+            markup = _jama_two_srcs_markup(src, src)
+            profile = profile_for_url(JAMA_TWO_URL)
+            result = build_figure_manifest(
+                markup, profile=profile, base_url=JAMA_TWO_URL)
+            assert [(f.label, f.figure_id) for f in result.figures] == [
+                ('Figure', 'articlegraphic-a'),
+                ('Figure', 'articlegraphic-b')], src
+            assert all(f.asset_sha256 == '' for f in result.figures), src
+            assert all(f.asset_url == '' for f in result.figures), src
+
+    def test_equivalent_headers_and_distinct_bytes_agree_both_sides(self):
+        import json
+        import shutil
+        import subprocess
+
+        root = Path(__file__).resolve().parents[1]
+        node = shutil.which('node') or shutil.which('nodejs')
+        assert node and (root / 'node_modules/linkedom').is_dir(), \
+            'actual serializer test prerequisites required'
+        from urllib.parse import quote_from_bytes
+
+        red = _synthetic_b64('graphic-a.png')
+        blue = _synthetic_b64('graphic-b.png')
+        wrapped = '\n'.join(red[i:i + 20] for i in range(0, len(red), 20))
+        percent_red = quote_from_bytes(_synthetic_png('graphic-a.png'), safe='')
+        percent_blue = quote_from_bytes(_synthetic_png('graphic-b.png'), safe='')
+        cases = [
+            # Same decoded bytes, different headers: one figure on both sides.
+            (f'data:image/png;base64,{red}',
+             f'data:image/png;charset=binary;base64,{red}',
+             [('Figure', 'articlegraphic-a')]),
+            # Same bytes, whitespace-wrapped payload: still one figure.
+            (f'data:image/png;base64,{red}',
+             f'data:image/png;base64,{wrapped}',
+             [('Figure', 'articlegraphic-a')]),
+            # Same bytes, base64 vs percent-encoding: one figure on both
+            # sides. Identity comes from decoded bytes, not payload text.
+            (f'data:image/png;base64,{red}',
+             f'data:image/png,{percent_red}',
+             [('Figure', 'articlegraphic-a')]),
+            # Distinct bytes, different headers: still two figures.
+            (f'data:image/png;base64,{red}',
+             f'data:image/png;charset=binary;base64,{blue}',
+             [('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]),
+            # Distinct bytes, base64 vs percent-encoding: still two figures.
+            (f'data:image/png;base64,{red}',
+             f'data:image/png,{percent_blue}',
+             [('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]),
+            # Distinct bytes, same header: still two figures.
+            (f'data:image/png;base64,{red}',
+             f'data:image/png;base64,{blue}',
+             [('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]),
+            # Same invalid payload, distinct declared keys: two figures,
+            # honestly unmeasured, on both sides.
+            ('data:image/png;base64,A', 'data:image/png;base64,A',
+             [('Figure', 'articlegraphic-a'), ('Figure', 'articlegraphic-b')]),
+        ]
+        for src1, src2, expected in cases:
+            markup = _jama_two_srcs_markup(src1, src2)
+            profile = profile_for_url(JAMA_TWO_URL)
+            receiver = build_figure_manifest(
+                markup, profile=profile, base_url=JAMA_TWO_URL)
+            assert [(f.label, f.figure_id) for f in receiver.figures] == expected, src2[:60]
+            script = f'''
+              import {{ parseHTML }} from 'linkedom';
+              import {{ serializePage }} from '{(root / 'extension/serialize.js').as_posix()}';
+              import {{ LIMITS }} from '{(root / 'extension/limits.js').as_posix()}';
+              const {{ document }} = parseHTML({json.dumps(markup)});
+              globalThis.document = document;
+              globalThis.location = {{ href: {json.dumps(JAMA_TWO_URL)} }};
+              const page = serializePage('0123456789abcdef', {json.dumps(profile)}, LIMITS);
+              console.log(JSON.stringify((page.figures || []).map(f => [f.label, f.figure_id])));
+            '''
+            proc = subprocess.run([node, '--input-type=module', '--eval', script],
+                                  capture_output=True, text=True, check=True, cwd=root)
+            seen = [tuple(row) for row in json.loads(proc.stdout.strip().splitlines()[-1])]
+            assert seen == expected, src2[:60]

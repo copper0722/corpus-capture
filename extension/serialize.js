@@ -260,10 +260,74 @@ export function serializePage(nonce, profile, limits) {
   // thumbnail -- carries the same alt on both, and listing it twice makes the
   // manifest disagree with the article.
   // A label without a number names a kind, not an item: three unnumbered
-  // figures are all "Figure". For those the asset is the identity.
+  // figures are all "Figure". For those the asset is the identity: the URL
+  // when the page still names one, otherwise the publisher's own element key
+  // so two declared JAMA anchors with no URL never collapse into one. For a
+  // data: URI the identity is the normalized payload, not the full URI
+  // string, so equivalent headers over identical bytes compare equal while
+  // invalid or empty payloads fall back to the publisher key. Synchronous,
+  // no dependency and no hash: the payload itself is the comparison.
+  // Decode a percent-encoded payload to a binary string, matching Python
+  // unquote_to_bytes: valid %XX becomes one byte, anything else stays
+  // literal. Synchronous, no dependency.
+  const decodePercentToBinary = (payload) => {
+    let out = "";
+    for (let i = 0; i < payload.length; i++) {
+      const ch = payload[i];
+      if (ch === "%" && /^[0-9A-Fa-f]{2}$/.test(payload.slice(i + 1, i + 3))) {
+        out += String.fromCharCode(parseInt(payload.slice(i + 1, i + 3), 16));
+        i += 2;
+      } else {
+        if (payload.charCodeAt(i) > 255) return "";
+        out += ch;
+      }
+    }
+    return out;
+  };
+  // Identity from actual decoded bytes, so base64 and percent-encoding of
+  // the same bytes compare equal. atob is synchronous platform capability,
+  // not a new dependency; failure stays honestly unmeasured.
+  const dataUriIdentity = (url) => {
+    const comma = url.indexOf(",");
+    if (comma < 0) return "";
+    const header = url.slice(0, comma);
+    const payload = url.slice(comma + 1);
+    let binary = "";
+    if (/;base64/i.test(header)) {
+      const cleaned = payload.replace(/\s+/g, "");
+      if (!cleaned) return "";
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$/.test(cleaned)) {
+        return "";
+      }
+      try {
+        binary = (typeof atob === "function") ? atob(cleaned) : "";
+      } catch (_) {
+        return "";
+      }
+      if (!binary) return "";
+    } else {
+      if (!payload) return "";
+      binary = decodePercentToBinary(payload);
+      if (!binary) return "";
+    }
+    return "data-bytes:" + binary;
+  };
+  const bareIdentity = (row) => {
+    if (!row.asset_url) {
+      if (row.figure_id) return "id:" + row.figure_id;
+      return "";
+    }
+    if (/^data:/i.test(row.asset_url)) {
+      const identity = dataUriIdentity(row.asset_url);
+      if (identity) return identity;
+      if (row.figure_id) return "id:" + row.figure_id;
+      return "";
+    }
+    return row.asset_url;
+  };
   const bestByLabel = new Map();
   for (const row of figureRows) {
-    const key = BARE_KINDS.has(row.label) ? row.label + "\u0000" + row.asset_url : row.label;
+    const key = BARE_KINDS.has(row.label) ? row.label + "\u0000" + bareIdentity(row) : row.label;
     const current = bestByLabel.get(key);
     if (!current || row.rank < current.rank
         || (row.rank === current.rank && row.caption.length > current.caption.length)) {

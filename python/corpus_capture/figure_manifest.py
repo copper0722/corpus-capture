@@ -279,6 +279,73 @@ def _asset_url(img, base_url: str) -> str:
     return urljoin(base_url, raw) if base_url else raw
 
 
+def _embedded_sha256(img) -> str:
+    """Hash of embedded ``data:`` bytes, for identity when the URL is gone.
+
+    The receiver intentionally reports ``asset_url=""`` once a captured data
+    URI loses its original URL: there is no remote asset left to name. Two
+    legitimate unnumbered graphics with distinct XML anchors and distinct
+    embedded bytes would then share the dedup key ``("Figure", "")`` and
+    collapse into one. The bytes themselves are the identity that survives:
+    distinct embedded images hash differently and stay two figures, while the
+    same embedded bytes hashed twice still collapse per the documented
+    same-asset contract. Never a size test and never a number invention.
+
+    Invalid or unavailable bytes stay honestly unmeasured: malformed base64,
+    bad padding, or an empty payload returns ``""`` so nothing unverified is
+    stored in the image-byte field. Declared identity is then preserved
+    through the publisher element key, without manufacturing fixity.
+    """
+
+    import base64
+    from urllib.parse import unquote_to_bytes
+
+    src = (img.get("src") or "").strip()
+    if not src.startswith("data:"):
+        return ""
+    header, comma, payload_text = src.partition(",")
+    if not comma:
+        return ""
+    try:
+        if ";base64" in header.lower():
+            cleaned = re.sub(r"\s+", "", payload_text)
+            if not cleaned:
+                return ""
+            raw_bytes = base64.b64decode(cleaned, validate=True)
+            if not raw_bytes:
+                return ""
+        else:
+            if not payload_text:
+                return ""
+            raw_bytes = unquote_to_bytes(payload_text)
+            if not raw_bytes:
+                return ""
+    except Exception:
+        return ""
+    try:
+        return hashlib.sha256(bytes(raw_bytes)).hexdigest()
+    except Exception:
+        return ""
+
+
+def _bare_identity(figure: FigureRecord) -> str:
+    """What makes one unnumbered ``Figure`` a different item from another.
+
+    The asset URL when the publisher still names one; otherwise the hash of
+    the embedded bytes the capture actually stored; otherwise the publisher's
+    own element key (JAMA's ``path-from-xml`` anchor). Numbered labels never
+    reach here: ``Figure 1`` and ``Figure 2`` are different by their numbers.
+    """
+
+    if figure.asset_url:
+        return figure.asset_url
+    if figure.asset_sha256:
+        return "sha256:" + figure.asset_sha256
+    if figure.figure_id:
+        return "id:" + figure.figure_id
+    return ""
+
+
 def _select(root, selectors) -> list:
     seen: list = []
     for selector in selectors:
@@ -420,6 +487,7 @@ def build_figure_manifest(
         if not label:
             return
         payload = (asset_bytes or {}).get(url)
+        embedded_hash = _embedded_sha256(img) if not url else ""
         claimed.add(id(img))
         candidates.append((
             rank,
@@ -429,7 +497,8 @@ def build_figure_manifest(
                 label=label,
                 caption=caption,
                 asset_url=url,
-                asset_sha256=hashlib.sha256(payload).hexdigest() if payload else "",
+                asset_sha256=hashlib.sha256(payload).hexdigest()
+                if payload else embedded_hash,
                 position=0,
                 selector=selector,
                 alt=alt,
@@ -461,11 +530,14 @@ def build_figure_manifest(
     # A label WITHOUT a number identifies a kind, not an item: three unnumbered
     # figures are all "Figure", and folding them into one kept a single image of
     # three. For those the asset is the identity, so the same asset rendered
-    # twice still collapses and different assets never do.
+    # twice still collapses and different assets never do. When the captured
+    # data: URI has lost its original URL the bytes are the identity
+    # (`_embedded_sha256`); when even those are absent the publisher's own
+    # element key is, so two declared JAMA anchors never collapse into one.
     best: dict[tuple[str, str], tuple[int, int, FigureRecord]] = {}
     for rank, index, figure in candidates:
         bare = figure.label in _BARE_KIND_LABELS
-        key = (figure.label, figure.asset_url if bare else "")
+        key = (figure.label, _bare_identity(figure) if bare else "")
         current = best.get(key)
         if current is None or (rank, -len(figure.caption)) < (current[0], -len(current[2].caption)):
             best[key] = (rank, index, figure)
