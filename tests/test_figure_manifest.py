@@ -549,3 +549,58 @@ def test_every_supported_profile_has_the_fixture_it_claims():
             continue
         path = fixture_path(profile)
         assert path is not None and path.is_file(), profile["id"]
+
+
+JAMA_INLINE_URL = 'https://jamanetwork.com/journals/jama/fullarticle/9999999'
+JAMA_INLINE = '''<html><body><div class="article-body"><p>ARTICLE_PROSE</p>
+<div class="figure-table-wrapper inline"><div class="inline-graphic">
+<a class="figure-anchor" id="articlegraphic-a"></a>
+<a path-from-xml="articlegraphic-a" href="https://cdn.jamanetwork.com/graphic.png">
+<img class="content-img" path-from-xml="articlegraphic-a" alt="Image description not available."
+src="https://cdn.jamanetwork.com/graphic.png"></a></div></div></div>
+<img src="https://cdn.jamanetwork.com/logo.png" alt="Journal logo"></body></html>'''.replace('ARTICLE_PROSE', 'Synthetic article paragraph with independently scoped body. ' * 10)
+
+
+def _jama_inline_cases():
+    return [
+        (JAMA_INLINE, 'jama', [('Figure', 'articlegraphic-a')]),
+        (JAMA_INLINE.replace('id="articlegraphic-a"', 'id="unrelated"'), 'jama', []),
+        (JAMA_INLINE.replace('class="inline-graphic"', 'class="other"'), 'jama', []),
+        (JAMA_INLINE.replace('class="figure-table-wrapper inline"', 'class="figure-table-wrapper"'), 'jama', []),
+        (JAMA_INLINE.replace('path-from-xml="articlegraphic-a"', ''), 'jama', []),
+        (JAMA_INLINE.replace('class="article-body"', 'class="outside"').replace(
+            '</body>', '<div class="article-body"><p>' + 'Independent actual article body. ' * 20 + '</p></div></body>'), 'jama', []),
+        (JAMA_INLINE, 'different-publisher', []),
+        (JAMA_INLINE.replace('class="article-body"', 'class="unknown-scope"'), 'jama', []),
+    ]
+
+
+@pytest.mark.parametrize('markup,profile_id,expected', _jama_inline_cases())
+def test_jama_declared_inline_graphic_preserves_xml_identity(markup, profile_id, expected):
+    profile = {**profile_for_url(JAMA_INLINE_URL), 'id': profile_id}
+    result = build_figure_manifest(markup, profile=profile, base_url=JAMA_INLINE_URL)
+    assert [(f.label, f.figure_id) for f in result.figures] == expected
+
+
+def test_jama_inline_graphic_extension_receiver_parity():
+    import json
+    import shutil
+    import subprocess
+    root = Path(__file__).resolve().parents[1]
+    node = shutil.which('node') or shutil.which('nodejs')
+    assert node and (root / 'node_modules/linkedom').is_dir(), 'actual serializer test prerequisites required'
+    for markup, profile_id, expected in _jama_inline_cases():
+        profile = {**profile_for_url(JAMA_INLINE_URL), 'id': profile_id}
+        script = f'''
+          import {{ parseHTML }} from 'linkedom';
+          import {{ serializePage }} from '{(root / 'extension/serialize.js').as_posix()}';
+          import {{ LIMITS }} from '{(root / 'extension/limits.js').as_posix()}';
+          const {{ document }} = parseHTML({json.dumps(markup)});
+          globalThis.document = document;
+          globalThis.location = {{ href: {json.dumps(JAMA_INLINE_URL)} }};
+          const page = serializePage('0123456789abcdef', {json.dumps(profile)}, LIMITS);
+          console.log(JSON.stringify((page.figures || []).map(f => [f.label, f.figure_id])));
+        '''
+        result = subprocess.run([node, '--input-type=module', '--eval', script],
+                                capture_output=True, text=True, check=True, cwd=root)
+        assert [tuple(row) for row in json.loads(result.stdout)] == expected

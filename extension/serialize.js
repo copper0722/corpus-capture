@@ -207,9 +207,23 @@ export function serializePage(nonce, profile, limits) {
     if (claimed.has(img) || figureRows.length >= cap.maxFigures) return;
     const caption = captionOf(node);
     const alt = (img.getAttribute("alt") || "").trim().slice(0, cap.maxAltChars);
-    const elementId = (node.id || img.id || "").trim();
+    let elementId = (node.id || img.id || "").trim();
     const unnumbered = isUnnumbered(imageUrl(img));
     let label = labelFor(elementId, alt, caption, !unnumbered);
+    // Match the receiver: JAMA declares an inline graphic through a shared
+    // XML key on the image/link and its figure anchor, not through image size.
+    if (!label && rank === 0 && profile.id === "jama" && scoped) {
+      const wrapper = img.closest("div.inline-graphic");
+      const xmlKey = (img.getAttribute("path-from-xml") || "").trim();
+      if (wrapper && wrapper !== node && node.contains(wrapper)
+          && node.matches(".figure-table-wrapper.inline") && xmlKey
+          && img.parentElement?.tagName.toLowerCase() === "a"
+          && img.parentElement.getAttribute("path-from-xml") === xmlKey
+          && [...wrapper.querySelectorAll("a.figure-anchor[id]")].some((a) => a.id === xmlKey)) {
+        elementId = xmlKey;
+        label = KIND.figure;
+      }
+    }
     // A publisher-marked figure served from the unnumbered series is a display
     // item whatever its id spells: ScienceDirect keys them `undfig1`, with no
     // caption and an empty alt. An unlabelled figure with an ordinary asset is

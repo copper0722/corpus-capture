@@ -385,6 +385,20 @@ def build_figure_manifest(
             caption=caption,
             numbered=not unnumbered,
         )
+        # JAMA's unnumbered inline graphic has no caption/figure-number alt.
+        # Its publisher XML key ties the image to the declared graphic anchor;
+        # mere location in the body or image size is not sufficient evidence.
+        if not label and rank == 0 and profile.get("id") == "jama" and container_selector:
+            wrapper = img.find_parent("div", class_="inline-graphic")
+            xml_key = (img.get("path-from-xml") or "").strip()
+            if (wrapper is not None and wrapper in node.descendants
+                    and {"figure-table-wrapper", "inline"}.issubset(node.get("class", []))
+                    and xml_key and img.parent.name == "a"
+                    and img.parent.get("path-from-xml") == xml_key
+                    and any(a.get("id") == xml_key
+                            for a in wrapper.select("a.figure-anchor[id]"))):
+                element_id = xml_key
+                label = _KIND_WORDS["figure"]
         if not label and rank == 0 and unnumbered:
             # The publisher marked this element as a figure AND serves its asset
             # from the unnumbered series, so it is a display item whatever its id
